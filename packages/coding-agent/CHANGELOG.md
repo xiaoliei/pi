@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+### Breaking Changes
+
+- Replaced the built-in provider catalog with user-configured API endpoints.
+  Add endpoints with the new `/connect` command (baseUrl + key + protocol,
+  optional `/models` discovery); endpoint config lives in `models.json`.
+- Removed `/login` and `/logout` and the `pi auth` CLI commands
+  (`print-api-key`, `print-bearer-token`, `auth check`).
+- Removed the bundled llama.cpp extension (`/llama`); add llama.cpp as a
+  regular `/connect` endpoint instead.
+- Removed `remote-catalog-provider.ts`, radius provider wiring, and
+  `model-resolver` built-in default model ids. Provider-only `-p <provider>`
+  resolution requires an explicit model.
+- Removed the `enabled`-less model schema default: models may set
+  `enabled: false` to hide from selection while remaining resolvable by id.
+
 ### Fixed
 
 - Fixed Z.AI Coding Plan defaults referencing the removed GLM-5.1 model ([#8096](https://github.com/earendil-works/pi/issues/8096)).
