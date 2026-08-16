@@ -157,6 +157,7 @@ const ModelCostSchema = Type.Object({
 const ModelDefinitionSchema = Type.Object({
 	id: Type.String({ minLength: 1 }),
 	name: Type.Optional(Type.String({ minLength: 1 })),
+	enabled: Type.Optional(Type.Boolean()),
 	api: Type.Optional(Type.String({ minLength: 1 })),
 	baseUrl: Type.Optional(Type.String({ minLength: 1 })),
 	reasoning: Type.Optional(Type.Boolean()),
@@ -172,6 +173,7 @@ const ModelDefinitionSchema = Type.Object({
 
 const ModelOverrideSchema = Type.Object({
 	name: Type.Optional(Type.String({ minLength: 1 })),
+	enabled: Type.Optional(Type.Boolean()),
 	reasoning: Type.Optional(Type.Boolean()),
 	thinkingLevelMap: Type.Optional(ThinkingLevelMapSchema),
 	input: Type.Optional(Type.Array(Type.Union([Type.Literal("text"), Type.Literal("image")]))),
@@ -196,7 +198,6 @@ const ProviderConfigSchema = Type.Object({
 	baseUrl: Type.Optional(Type.String({ minLength: 1 })),
 	apiKey: Type.Optional(Type.String({ minLength: 1 })),
 	api: Type.Optional(Type.String({ minLength: 1 })),
-	oauth: Type.Optional(Type.Literal("radius")),
 	headers: Type.Optional(Type.Record(Type.String(), Type.String())),
 	compat: Type.Optional(ProviderCompatSchema),
 	authHeader: Type.Optional(Type.Boolean()),
@@ -233,6 +234,29 @@ function deepFreeze<T>(value: T): T {
 	return Object.freeze(value);
 }
 
+/**
+ * Validate arbitrary models.json content (JSONC) against the schema.
+ * Returns an error message, or undefined when valid. Used by the /connect
+ * write path to refuse overwriting files that are currently broken.
+ */
+export function validateModelsConfigContent(content: string): string | undefined {
+	let parsed: unknown;
+	try {
+		parsed = JSON.parse(stripJsonComments(content));
+	} catch (error) {
+		return `Failed to parse models.json: ${error instanceof Error ? error.message : String(error)}`;
+	}
+	if (!validateModelsConfig.Check(parsed)) {
+		const errors =
+			validateModelsConfig
+				.Errors(parsed)
+				.map((error) => `  - ${formatValidationPath(error)}: ${error.message}`)
+				.join("\n") || "Unknown schema error";
+		return `Invalid models.json schema:\n${errors}`;
+	}
+	return undefined;
+}
+
 /** One immutable load of models.json. */
 export class ModelConfig {
 	private readonly providers: ReadonlyMap<string, ModelsJsonProvider>;
@@ -257,26 +281,10 @@ export class ModelConfig {
 			);
 		}
 
-		let parsed: unknown;
-		try {
-			parsed = JSON.parse(stripJsonComments(content));
-		} catch (error) {
-			return new ModelConfig(
-				new Map(),
-				`Failed to parse models.json: ${error instanceof Error ? error.message : error}\n\nFile: ${path}`,
-			);
-		}
+		const validationError = validateModelsConfigContent(content);
+		if (validationError) return new ModelConfig(new Map(), `${validationError}\n\nFile: ${path}`);
 
-		if (!validateModelsConfig.Check(parsed)) {
-			const errors =
-				validateModelsConfig
-					.Errors(parsed)
-					.map((error) => `  - ${formatValidationPath(error)}: ${error.message}`)
-					.join("\n") || "Unknown schema error";
-			return new ModelConfig(new Map(), `Invalid models.json schema:\n${errors}\n\nFile: ${path}`);
-		}
-
-		const config = parsed as ModelsJson;
+		const config = JSON.parse(stripJsonComments(content)) as ModelsJson;
 		const providers = new Map<string, ModelsJsonProvider>();
 		for (const [providerId, provider] of Object.entries(config.providers)) {
 			providers.set(providerId, deepFreeze(structuredClone(provider)));

@@ -1,7 +1,7 @@
 /**
- * API Keys and OAuth
+ * API Keys and Endpoints
  *
- * Configure provider auth through ModelRuntime.
+ * Configure endpoint auth through ModelRuntime.
  */
 
 import { createAgentSession, ModelRuntime, SessionManager } from "@earendil-works/pi-coding-agent";

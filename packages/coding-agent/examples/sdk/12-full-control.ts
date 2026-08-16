@@ -4,7 +4,6 @@
  * Replace everything - no discovery, explicit configuration.
  */
 
-import { getModel } from "@earendil-works/pi-ai/compat";
 import {
 	createAgentSession,
 	createExtensionRuntime,
@@ -18,12 +17,10 @@ const modelRuntime = await ModelRuntime.create({
 	authPath: "/tmp/my-agent/auth.json",
 	modelsPath: "/tmp/my-agent/models.json",
 });
-if (process.env.MY_ANTHROPIC_KEY) {
-	await modelRuntime.setRuntimeApiKey("anthropic", process.env.MY_ANTHROPIC_KEY);
-}
 
-const model = getModel("anthropic", "claude-sonnet-4-5");
-if (!model) throw new Error("Model not found");
+// Models come from /connect (or hand-edited models.json). Resolve one:
+const model = modelRuntime.getModel("my-anthropic", "claude-sonnet-4-5");
+if (!model) throw new Error("Model not found. Add an endpoint with /connect (or write models.json).");
 
 // In-memory settings with overrides
 const settingsManager = SettingsManager.inMemory({

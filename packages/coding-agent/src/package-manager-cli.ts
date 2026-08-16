@@ -401,7 +401,6 @@ async function refreshModelCatalogs(agentDir: string): Promise<void> {
 		const modelRuntime = await ModelRuntime.create({
 			authPath: join(agentDir, "auth.json"),
 			modelsPath: join(agentDir, "models.json"),
-			allowModelNetwork: false,
 			signal: controller.signal,
 		});
 		const result = await modelRuntime.refresh({

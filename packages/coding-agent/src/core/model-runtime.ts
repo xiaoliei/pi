@@ -5,10 +5,8 @@ import {
 	type AssistantMessage,
 	type AssistantMessageEventStream,
 	type AuthCheck,
-	type AuthInteraction,
 	type AuthOperationOptions,
 	type AuthResult,
-	type AuthType,
 	type Context,
 	type Credential,
 	type CredentialInfo,
@@ -36,7 +34,6 @@ import {
 	type SimpleStreamOptions,
 	type StreamOptions,
 } from "@earendil-works/pi-ai";
-import * as builtinProviderCatalog from "@earendil-works/pi-ai/providers/all";
 import { getAgentDir } from "../config.ts";
 import { operationSignal, raceWithAbortSignal } from "../utils/abort.ts";
 import { AuthStorage as DefaultAuthStorage } from "./auth-storage.ts";
@@ -47,12 +44,12 @@ import {
 	type CompatibilityRequestConfig,
 	composeModelProvider,
 	configuredRequestAuthStatus,
+	isProviderModelEnabled,
 	type ProviderConfigInput,
 	resolveCompatibilityRequestConfig,
 	resolveConfiguredModelHeaders,
 	validateExtensionProvider,
 } from "./provider-composer.ts";
-import { withRemoteCatalog } from "./remote-catalog-provider.ts";
 import { RuntimeCredentials } from "./runtime-credentials.ts";
 
 interface ModelRuntimeSnapshot {
@@ -70,11 +67,6 @@ export interface CreateModelRuntimeOptions {
 	modelsPath?: string | null;
 	modelsStore?: ModelsStore;
 	modelsStorePath?: string;
-	/** Allow create() to refresh model catalogs over the network. Defaults to false. */
-	allowModelNetwork?: boolean;
-	/** Timeout for the create-time network model refresh. */
-	modelRefreshTimeoutMs?: number;
-	catalogBaseUrl?: string;
 	/** Optional caller cancellation for initial cache restoration and availability checks. */
 	signal?: AbortSignal;
 	/** Skip initial catalog and availability refresh. Static models remain available. */
@@ -84,11 +76,9 @@ export interface CreateModelRuntimeOptions {
 export interface ModelRuntimeAuthOverrides extends AuthOperationOptions {
 	apiKey?: string;
 	env?: Record<string, string>;
-	/** Require this much remaining OAuth-token validity; defaults to five minutes. */
-	minOAuthValidityMs?: number;
 }
 
-export type CredentialSynchronizationOperation = "login" | "logout" | "setRuntimeApiKey" | "removeRuntimeApiKey";
+export type CredentialSynchronizationOperation = "setRuntimeApiKey" | "removeRuntimeApiKey";
 
 /** Credentials changed successfully, but the local model/auth snapshot could not be synchronized. */
 export class CredentialSynchronizationError extends Error {
@@ -136,7 +126,6 @@ export class ModelRuntime implements Models {
 	private readonly extensionProviders = new Map<string, ProviderConfigInput>();
 	private readonly compositionErrors = new Map<string, string>();
 	private readonly modelsPath: string | undefined;
-	private readonly modelNetworkEnabled: boolean;
 	private config: ModelConfig;
 	private snapshot: ModelRuntimeSnapshot = {
 		all: [],
@@ -157,12 +146,10 @@ export class ModelRuntime implements Models {
 		modelsPath: string | undefined,
 		modelsStore: ModelsStore,
 		providers: readonly Provider[],
-		modelNetworkEnabled: boolean,
 	) {
 		this.credentials = credentials;
 		this.config = config;
 		this.modelsPath = modelsPath;
-		this.modelNetworkEnabled = modelNetworkEnabled;
 		this.defaultBuiltins = new Map(providers.map((provider) => [provider.id, provider]));
 		for (const [providerId, provider] of this.defaultBuiltins) this.builtins.set(providerId, provider);
 		this.models = createModels({ credentials, modelsStore });
@@ -179,58 +166,14 @@ export class ModelRuntime implements Models {
 			(modelsPath
 				? new FileModelsStore(options.modelsStorePath ?? join(dirname(modelsPath), "models-store.json"))
 				: new InMemoryCodingAgentModelsStore());
-		const builtinModelDataGeneratedAt = builtinProviderCatalog.getBuiltinModelDataGeneratedAt();
-		const providers = builtinProviderCatalog
-			.builtinProviders()
-			.map((provider) =>
-				provider.id === "radius"
-					? provider
-					: withRemoteCatalog(provider, options.catalogBaseUrl, builtinModelDataGeneratedAt),
-			);
-		const runtime = new ModelRuntime(
-			credentials,
-			config,
-			modelsPath,
-			modelsStore,
-			providers,
-			process.env.PI_OFFLINE === undefined,
-		);
-		runtime.configureRadiusProviders();
+		// No built-in providers: the provider set comes from models.json endpoints
+		// and extensions. `createModels` keeps the collection empty until compose.
+		const runtime = new ModelRuntime(credentials, config, modelsPath, modelsStore, []);
 		runtime.rebuildProviders();
-		const refreshFromNetwork = runtime.modelNetworkEnabled && options.allowModelNetwork === true;
-		const controller =
-			refreshFromNetwork && options.modelRefreshTimeoutMs !== undefined ? new AbortController() : undefined;
-		const timeout = controller ? setTimeout(() => controller.abort(), options.modelRefreshTimeoutMs) : undefined;
-		const signal = controller
-			? options.signal
-				? AbortSignal.any([options.signal, controller.signal])
-				: controller.signal
-			: options.signal;
-		try {
-			if (options.refreshOnCreate !== false) {
-				await runtime.refresh({ allowNetwork: refreshFromNetwork, signal });
-			}
-		} finally {
-			if (timeout) clearTimeout(timeout);
+		if (options.refreshOnCreate !== false) {
+			await runtime.refresh({ allowNetwork: false, signal: options.signal });
 		}
 		return runtime;
-	}
-
-	private configureRadiusProviders(): void {
-		this.builtins.clear();
-		for (const [providerId, provider] of this.defaultBuiltins) this.builtins.set(providerId, provider);
-		for (const providerId of this.config.getProviderIds()) {
-			const config = this.config.getProvider(providerId);
-			if (config?.oauth !== "radius" || !config.baseUrl) continue;
-			this.builtins.set(
-				providerId,
-				builtinProviderCatalog.radiusProvider({
-					id: providerId,
-					name: config.name ?? providerId,
-					gateway: config.baseUrl.replace(/\/v1\/?$/u, ""),
-				}),
-			);
-		}
 	}
 
 	private providerIds(): Set<string> {
@@ -278,7 +221,11 @@ export class ModelRuntime implements Models {
 		this.snapshot = {
 			...this.snapshot,
 			all,
-			available: all.filter((model) => this.snapshot.configuredProviders.has(model.provider)),
+			available: all.filter(
+				(model) =>
+					this.snapshot.configuredProviders.has(model.provider) &&
+					isProviderModelEnabled(this.config, model.provider, model.id),
+			),
 		};
 	}
 
@@ -305,7 +252,7 @@ export class ModelRuntime implements Models {
 		);
 		this.snapshot = {
 			all: [...this.models.getModels()],
-			available: [...available],
+			available: [...available].filter((model) => isProviderModelEnabled(this.config, model.provider, model.id)),
 			configuredProviders,
 			storedProviders: new Set(credentials.map((entry) => entry.providerId)),
 			auth,
@@ -356,10 +303,10 @@ export class ModelRuntime implements Models {
 			else storedProviders.delete(providerId);
 			const all = [...this.models.getModels()];
 			const availableById = new Map(
-				[...this.snapshot.available.filter((model) => model.provider !== providerId), ...available].map((model) => [
-					`${model.provider}\0${model.id}`,
-					model,
-				]),
+				[
+					...this.snapshot.available.filter((model) => model.provider !== providerId),
+					...available.filter((model) => isProviderModelEnabled(this.config, model.provider, model.id)),
+				].map((model) => [`${model.provider}\0${model.id}`, model]),
 			);
 			this.snapshot = {
 				all,
@@ -387,6 +334,10 @@ export class ModelRuntime implements Models {
 
 	getProvider(providerId: string): Provider | undefined {
 		return this.models.getProvider(providerId);
+	}
+
+	getModelsPath(): string | undefined {
+		return this.modelsPath;
 	}
 
 	getModels(providerId?: string): readonly Model<Api>[] {
@@ -453,14 +404,6 @@ export class ModelRuntime implements Models {
 			this.config.getProvider(model.provider),
 			this.extensionProviders.get(model.provider),
 		);
-	}
-
-	isUsingOAuth(providerId: string): boolean {
-		return this.snapshot.auth.get(providerId)?.type === "oauth";
-	}
-
-	isUsingSubscription(providerId: string): boolean {
-		return this.isUsingOAuth(providerId) && this.models.getProvider(providerId)?.auth.oauth?.isSubscription === true;
 	}
 
 	hasConfiguredAuth(providerId: string): boolean {
@@ -670,26 +613,8 @@ export class ModelRuntime implements Models {
 		await prepared.provider.cancelDeferred(prepared.model, handle, prepared.options as DeferredCancelOptions);
 	}
 
-	login(providerId: string, type: AuthType, interaction: AuthInteraction): Promise<Credential> {
-		const signal = operationSignal(interaction.signal);
-		return this.enqueueCredentialOperation(providerId, signal, async () => {
-			const credential = await this.models.login(providerId, type, { ...interaction, signal });
-			await this.synchronizeCredentialState(providerId, "login", credential, signal);
-			return credential;
-		});
-	}
-
-	logout(providerId: string, options: AuthOperationOptions = {}): Promise<void> {
-		const signal = operationSignal(options.signal);
-		return this.enqueueCredentialOperation(providerId, signal, async () => {
-			await this.models.logout(providerId, { signal });
-			await this.synchronizeCredentialState(providerId, "logout", undefined, signal);
-		});
-	}
-
 	async refresh(options: ModelsRefreshOptions = {}): Promise<ModelsRefreshResult> {
 		this.config = await ModelConfig.load(this.modelsPath);
-		this.configureRadiusProviders();
 		if (options.providers) {
 			for (const providerId of new Set(options.providers)) this.recomposeProvider(providerId);
 			this.updateModelSnapshot();
@@ -698,7 +623,7 @@ export class ModelRuntime implements Models {
 		}
 		const refreshOptions = {
 			...options,
-			allowNetwork: options.allowNetwork ?? this.modelNetworkEnabled,
+			allowNetwork: options.allowNetwork ?? false,
 		};
 		// Published pi-ai builds before ModelsStore returned void and accepted a provider ID.
 		// The fallback keeps source-mode CLI tests working without rebuilding workspace dependencies.
@@ -742,8 +667,12 @@ export class ModelRuntime implements Models {
 	registerProvider(providerId: string, config: ProviderConfigInput): void {
 		// Validate the incoming registration on its own, like the legacy registry:
 		// a broken re-registration must throw without touching the stored config.
-		validateExtensionProvider(providerId, this.builtins.get(providerId), this.config.getProvider(providerId), config);
-		this.nativeExtensionProviders.delete(providerId);
+		validateExtensionProvider(
+			providerId,
+			this.nativeExtensionProviders.get(providerId) ?? this.builtins.get(providerId),
+			this.config.getProvider(providerId),
+			config,
+		);
 		// Re-registration merges defined values over the previous registration and
 		// preserves undefined ones, matching the legacy ModelRegistry contract.
 		const previous = this.extensionProviders.get(providerId);
@@ -763,7 +692,7 @@ export class ModelRuntime implements Models {
 			// Provisional entry until the async refresh lands; never clobber a real check result.
 			if (!auth.get(providerId)) {
 				auth.set(providerId, {
-					type: effective.oauth && !effective.apiKey ? "oauth" : "api_key",
+					type: "api_key",
 					source: "configured provider",
 				});
 			}

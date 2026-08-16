@@ -8,10 +8,7 @@
  *   npx tsx test.ts claude-sonnet-4-5-20250929 --thinking
  */
 
-import { type Api, type Context, type Model, registerApiProvider, streamSimple } from "@earendil-works/pi-ai/compat";
-import { readFileSync } from "fs";
-import { getAgentDir } from "packages/coding-agent/src/config.js";
-import { join } from "path";
+import { type Api, type Context, type Model, registerApiProvider, streamSimple } from "@earendil-works/pi-ai";
 import { MODELS, streamGitLabDuo } from "./index.ts";
 
 const MODEL_MAP = new Map(MODELS.map((m) => [m.id, m]));
@@ -27,12 +24,9 @@ async function main() {
 		process.exit(1);
 	}
 
-	// Read auth
-	const authPath = join(getAgentDir(), "extensions", "auth.json");
-	const authData = JSON.parse(readFileSync(authPath, "utf-8"));
-	const gitlabCred = authData["gitlab-duo"];
-	if (!gitlabCred?.access) {
-		console.error("No gitlab-duo credentials. Run /login gitlab-duo first.");
+	const gitlabToken = process.env.GITLAB_TOKEN;
+	if (!gitlabToken) {
+		console.error("No gitlab-duo credentials. Set GITLAB_TOKEN first.");
 		process.exit(1);
 	}
 
@@ -64,7 +58,7 @@ async function main() {
 	console.log(`Model: ${model.id}, Backend: ${cfg.backend}, Thinking: ${useThinking}`);
 
 	const stream = streamSimple(model, context, {
-		apiKey: gitlabCred.access,
+		apiKey: gitlabToken,
 		maxTokens: 100,
 		reasoning: useThinking ? "low" : undefined,
 	});

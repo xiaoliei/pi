@@ -1,11 +1,9 @@
 import { join } from "node:path";
 import { getDocsPath } from "../config.ts";
 
-const UNKNOWN_PROVIDER = "unknown";
-
 export function getProviderLoginHelp(): string {
 	return [
-		"Use /login to log into a provider via OAuth or API key. See:",
+		"Use /connect to add an API endpoint (baseUrl + key + protocol). See:",
 		`  ${join(getDocsPath(), "providers.md")}`,
 		`  ${join(getDocsPath(), "models.md")}`,
 	].join("\n");
@@ -20,6 +18,5 @@ export function formatNoModelSelectedMessage(): string {
 }
 
 export function formatNoApiKeyFoundMessage(provider: string): string {
-	const providerDisplay = provider === UNKNOWN_PROVIDER ? "the selected model" : provider;
-	return `No API key found for ${providerDisplay}.\n\n${getProviderLoginHelp()}`;
+	return `No API key found for ${provider}.\n\n${getProviderLoginHelp()}`;
 }

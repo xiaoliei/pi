@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import { Agent, type AgentMessage, setDefaultStreamFn, type ThinkingLevel } from "@earendil-works/pi-agent-core";
-import { clampThinkingLevel, type Message, type Model, streamSimple } from "@earendil-works/pi-ai/compat";
+import { clampThinkingLevel, type Message, type Model, streamSimple } from "@earendil-works/pi-ai";
 import { getAgentDir } from "../config.ts";
 import { resolvePath } from "../utils/paths.ts";
 import { AgentSession } from "./agent-session.ts";
@@ -32,7 +32,7 @@ import {
 
 // Preserve the pre-0.81 fallback for extensions that construct Agent instances
 // or invoke low-level agent loops without supplying streamFn. Agent core remains
-// provider-agnostic and does not import pi-ai/compat itself.
+// provider-agnostic and does not import pi-ai directly.
 setDefaultStreamFn(streamSimple);
 
 export interface CreateAgentSessionOptions {
@@ -144,7 +144,7 @@ function getDefaultAgentDir(): string {
  * // With explicit model
  * import { getModel } from '@earendil-works/pi-ai';
  * const { session } = await createAgentSession({
- *   model: getModel('anthropic', 'claude-opus-4-5'),
+ *   model: endpointProvider({ id: 'my-endpoint', name: 'My Endpoint', baseUrl: 'https://…', api: 'openai-completions', models: […] }).getModels()[0],
  *   thinkingLevel: 'high',
  * });
  *

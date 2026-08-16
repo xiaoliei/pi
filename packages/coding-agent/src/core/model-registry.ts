@@ -124,10 +124,6 @@ export class ModelRegistry {
 		}
 	}
 
-	isUsingOAuth(model: Model<Api>): boolean {
-		return this.runtime.isUsingOAuth(model.provider);
-	}
-
 	registerProvider(provider: Provider): void;
 	registerProvider(providerName: string, config: ProviderConfigInput): void;
 	registerProvider(providerOrName: Provider | string, config?: ProviderConfigInput): void {
