@@ -1,4 +1,4 @@
-import { createModelRegistry, getModelRuntime } from "./model-runtime-test-utils.ts";
+import { createModelRegistry, getModelRuntime, registerTestFaux } from "./model-runtime-test-utils.ts";
 /**
  * E2E tests for AgentSession compaction behavior.
  *
@@ -63,6 +63,7 @@ describe.skipIf(!API_KEY)("AgentSession compaction e2e", () => {
 		settingsManager.applyOverrides({ compaction: { keepRecentTokens: 1 } });
 		const authStorage = AuthStorage.create(join(tempDir, "auth.json"));
 		const modelRegistry = await createModelRegistry(authStorage);
+		registerTestFaux(getModelRuntime(modelRegistry));
 
 		session = new AgentSession({
 			agent,

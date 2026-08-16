@@ -69,7 +69,7 @@ describe("issues #7027 and #7113 credential refresh hang", () => {
 		await runtime.setRuntimeApiKey(provider.id, "secret");
 
 		expect(runtime.getAvailableSnapshot().map((model) => model.id)).toContain(dynamicModel.id);
-		expect(await credentials.read(provider.id)).toEqual({ type: "api_key", key: "secret" });
+		expect(runtime.getProviderAuthStatus(provider.id)).toEqual({ configured: true, source: "runtime" });
 		await expect(stalledRefresh).resolves.toMatchObject({ aborted: false });
 	});
 });

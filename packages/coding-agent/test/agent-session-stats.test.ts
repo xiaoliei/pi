@@ -6,7 +6,7 @@ import { AuthStorage } from "../src/core/auth-storage.ts";
 import { SessionManager } from "../src/core/session-manager.ts";
 import { SettingsManager } from "../src/core/settings-manager.ts";
 import { getUsageCostBreakdown } from "../src/core/usage-totals.ts";
-import { createInMemoryModelRegistry, getModelRuntime } from "./model-runtime-test-utils.ts";
+import { createInMemoryModelRegistry, getModelRuntime, registerTestFaux } from "./model-runtime-test-utils.ts";
 import { createTestResourceLoader, testModel } from "./utilities.ts";
 
 const model = testModel();
@@ -66,6 +66,8 @@ async function createSession() {
 	const sessionManager = SessionManager.inMemory();
 	const authStorage = AuthStorage.inMemory();
 	await authStorage.modify("anthropic", async () => ({ type: "api_key", key: "test-key" }));
+	const modelRegistry = await createInMemoryModelRegistry(authStorage);
+	registerTestFaux(getModelRuntime(modelRegistry));
 	const session = new AgentSession({
 		agent: new Agent({
 			getApiKey: () => "test-key",
@@ -80,7 +82,7 @@ async function createSession() {
 		sessionManager,
 		settingsManager,
 		cwd: process.cwd(),
-		modelRuntime: getModelRuntime(await createInMemoryModelRegistry(authStorage)),
+		modelRuntime: getModelRuntime(modelRegistry),
 		resourceLoader: createTestResourceLoader(),
 	});
 

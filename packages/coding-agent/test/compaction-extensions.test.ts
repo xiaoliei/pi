@@ -1,4 +1,4 @@
-import { createModelRegistry, getModelRuntime } from "./model-runtime-test-utils.ts";
+import { createModelRegistry, getModelRuntime, registerTestFaux } from "./model-runtime-test-utils.ts";
 /**
  * Tests for compaction extension events (before_compact / compact).
  */
@@ -102,6 +102,7 @@ describe.skipIf(!API_KEY)("Compaction extensions", () => {
 		settingsManager.applyOverrides({ compaction: { keepRecentTokens: 1 } });
 		const authStorage = AuthStorage.create(join(tempDir, "auth.json"));
 		const modelRegistry = await createModelRegistry(authStorage);
+		registerTestFaux(getModelRuntime(modelRegistry));
 
 		const runtime = createExtensionRuntime();
 		const resourceLoader = {

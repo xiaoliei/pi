@@ -11,7 +11,7 @@ import { DefaultResourceLoader } from "../../../src/core/resource-loader.ts";
 import { createAgentSession } from "../../../src/core/sdk.ts";
 import { SessionManager } from "../../../src/core/session-manager.ts";
 import { SettingsManager } from "../../../src/core/settings-manager.ts";
-import { testModel } from "../../utilities.ts";
+import { createTestModelRuntime, testModel } from "../../utilities.ts";
 
 describe("regression #3592: no-builtin-tools keeps extension tools enabled", () => {
 	let tempDir: string;
@@ -57,6 +57,7 @@ describe("regression #3592: no-builtin-tools keeps extension tools enabled", () 
 		await resourceLoader.reload();
 
 		const { session } = await createAgentSession({
+			modelRuntime: await createTestModelRuntime(),
 			cwd: tempDir,
 			agentDir,
 			model: testModel(),
@@ -99,6 +100,7 @@ describe("regression #3592: no-builtin-tools keeps extension tools enabled", () 
 		const settingsManager = SettingsManager.create(tempDir, agentDir);
 		const sessionManager = SessionManager.inMemory(tempDir);
 		const services = await createAgentSessionServices({
+			modelRuntime: await createTestModelRuntime(),
 			cwd: tempDir,
 			agentDir,
 			settingsManager,

@@ -1,7 +1,15 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { AnthropicMessagesCompat, Api, Context, Model, OpenAICompletionsCompat } from "@earendil-works/pi-ai";
+import type {
+	AnthropicMessagesCompat,
+	Api,
+	Context,
+	Model,
+	OpenAICompletionsCompat,
+	Provider,
+	ProviderAuth,
+} from "@earendil-works/pi-ai";
 import { getApiProvider, getSupportedThinkingLevels } from "@earendil-works/pi-ai";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { AuthStorage } from "../src/core/auth-storage.ts";
@@ -73,6 +81,98 @@ describe("ModelRegistry", () => {
 		writeFileSync(modelsJsonPath, JSON.stringify({ providers }));
 	}
 
+	/**
+	 * A small "test built-in" catalog so models.json overlay tests have a base
+	 * layer to merge with (the real catalog is gone by design). Registered
+	 * locally so other suites are not polluted by these providers.
+	 */
+	function registerTestBuiltins(registry: ModelRegistry): void {
+		const catalogModel = (id: string, api: Api, baseUrl: string, provider: string): Model<Api> => ({
+			id,
+			name: id,
+			api,
+			provider,
+			baseUrl,
+			reasoning: true,
+			input: ["text", "image"] as ("text" | "image")[],
+			cost: { input: 5, output: 15, cacheRead: 0.5, cacheWrite: 6.25 },
+			contextWindow: 200000,
+			maxTokens: 64000,
+		});
+		const auth: ProviderAuth = {
+			apiKey: {
+				name: "Test key",
+				check: async ({ credential }) => (credential ? { type: "api_key" as const, source: "stored" } : undefined),
+				resolve: async ({ credential }) =>
+					credential ? { auth: { apiKey: credential.key }, source: "stored" } : undefined,
+			},
+		};
+		const streamStub = (): never => {
+			throw new Error("unused in model-registry tests");
+		};
+		const entries: Array<{ id: string; name: string; api: Api; baseUrl: string; models: string[] }> = [
+			{
+				id: "anthropic",
+				name: "Anthropic",
+				api: "anthropic-messages",
+				baseUrl: "https://api.anthropic.com",
+				models: ["claude-sonnet-4-5", "claude-opus-4-8", "claude-haiku-4-5"],
+			},
+			{
+				id: "openrouter",
+				name: "OpenRouter",
+				api: "openai-completions",
+				baseUrl: "https://openrouter.ai/api/v1",
+				models: ["anthropic/claude-sonnet-4", "anthropic/claude-opus-4", "openai/gpt-4o-mini"],
+			},
+			{
+				id: "openai",
+				name: "OpenAI",
+				api: "openai-completions",
+				baseUrl: "https://api.openai.com/v1",
+				models: ["gpt-4o-mini", "gpt-5-mini"],
+			},
+			{
+				id: "google",
+				name: "Google",
+				api: "openai-completions",
+				baseUrl: "https://generativelanguage.googleapis.com/v1",
+				models: ["gemini-2.5-flash", "gemini-custom"],
+			},
+			{
+				id: "zai",
+				name: "Z.AI",
+				api: "openai-completions",
+				baseUrl: "https://api.z.ai/api/paas/v4",
+				models: ["glm-5"],
+			},
+			{
+				id: "github-copilot",
+				name: "GitHub Copilot",
+				api: "openai-responses",
+				baseUrl: "https://api.githubcopilot.com/v1",
+				models: ["gpt-5-mini"],
+			},
+		];
+		for (const entry of entries) {
+			registry.registerProvider({
+				id: entry.id,
+				name: entry.name,
+				baseUrl: entry.baseUrl,
+				auth,
+				getModels: () => entry.models.map((id) => catalogModel(id, entry.api, entry.baseUrl, entry.id)),
+				stream: streamStub,
+				streamSimple: streamStub,
+			} satisfies Provider);
+		}
+	}
+
+	async function createRegistry(): Promise<ModelRegistry> {
+		const registry = await createModelRegistry(authStorage, modelsJsonPath);
+		registerTestBuiltins(registry);
+		return registry;
+	}
+
 	const openAiModel: Model<Api> = {
 		id: "test-openai-model",
 		name: "Test OpenAI Model",
@@ -96,7 +196,7 @@ describe("ModelRegistry", () => {
 				anthropic: overrideConfig("https://my-proxy.example.com/v1"),
 			});
 
-			const registry = await createModelRegistry(authStorage, modelsJsonPath);
+			const registry = await createRegistry();
 			const anthropicModels = getModelsForProvider(registry, "anthropic");
 
 			// Should have multiple built-in models, not just one
@@ -109,7 +209,7 @@ describe("ModelRegistry", () => {
 				anthropic: overrideConfig("https://my-proxy.example.com/v1"),
 			});
 
-			const registry = await createModelRegistry(authStorage, modelsJsonPath);
+			const registry = await createRegistry();
 			const anthropicModels = getModelsForProvider(registry, "anthropic");
 
 			// All models should have the new baseUrl
@@ -125,7 +225,7 @@ describe("ModelRegistry", () => {
 				}),
 			});
 
-			const registry = await createModelRegistry(authStorage, modelsJsonPath);
+			const registry = await createRegistry();
 			const anthropicModels = getModelsForProvider(registry, "anthropic");
 
 			for (const model of anthropicModels) {
@@ -146,7 +246,7 @@ describe("ModelRegistry", () => {
 				},
 			});
 
-			const registry = await createModelRegistry(authStorage, modelsJsonPath);
+			const registry = await createRegistry();
 			expect(registry.getError()).toBeUndefined();
 			const anthropicModels = getModelsForProvider(registry, "anthropic");
 
@@ -160,7 +260,7 @@ describe("ModelRegistry", () => {
 		});
 
 		test("unconfigured compatibility auth includes static model headers", async () => {
-			const registry = await createModelRegistry(authStorage, modelsJsonPath);
+			const registry = await createRegistry();
 			const base = registry.getAll()[0];
 			const model = {
 				...base,
@@ -178,7 +278,7 @@ describe("ModelRegistry", () => {
 				anthropic: overrideConfig("https://my-proxy.example.com/v1"),
 			});
 
-			const registry = await createModelRegistry(authStorage, modelsJsonPath);
+			const registry = await createRegistry();
 			const googleModels = getModelsForProvider(registry, "google");
 
 			// Google models should still have their original baseUrl
@@ -198,7 +298,7 @@ describe("ModelRegistry", () => {
 				),
 			});
 
-			const registry = await createModelRegistry(authStorage, modelsJsonPath);
+			const registry = await createRegistry();
 
 			// Anthropic: multiple built-in models with new baseUrl
 			const anthropicModels = getModelsForProvider(registry, "anthropic");
@@ -215,7 +315,7 @@ describe("ModelRegistry", () => {
 			writeRawModelsJson({
 				anthropic: overrideConfig("https://first-proxy.example.com/v1"),
 			});
-			const registry = await createModelRegistry(authStorage, modelsJsonPath);
+			const registry = await createRegistry();
 
 			expect(getModelsForProvider(registry, "anthropic")[0].baseUrl).toBe("https://first-proxy.example.com/v1");
 
@@ -246,7 +346,7 @@ describe("ModelRegistry", () => {
 				},
 			});
 
-			const registry = await createModelRegistry(authStorage, modelsJsonPath);
+			const registry = await createRegistry();
 			expect(registry.getError()).toBeUndefined();
 
 			const model = registry.find("openrouter", "fake-provider/fake-model");
@@ -270,7 +370,7 @@ describe("ModelRegistry", () => {
 				},
 			});
 
-			const registry = await createModelRegistry(authStorage, modelsJsonPath);
+			const registry = await createRegistry();
 			expect(registry.getError()).toContain("baseUrl");
 		});
 
@@ -280,7 +380,7 @@ describe("ModelRegistry", () => {
 				"broken-two": { api: "openai-completions", models: [{ id: "two" }] },
 			});
 
-			const registry = await createModelRegistry(authStorage, modelsJsonPath);
+			const registry = await createRegistry();
 			const error = registry.getError();
 
 			expect(error).toContain('Provider "broken-one"');
@@ -292,7 +392,7 @@ describe("ModelRegistry", () => {
 				anthropic: providerConfig("https://my-proxy.example.com/v1", [{ id: "claude-custom" }]),
 			});
 
-			const registry = await createModelRegistry(authStorage, modelsJsonPath);
+			const registry = await createRegistry();
 			const anthropicModels = getModelsForProvider(registry, "anthropic");
 
 			expect(anthropicModels.length).toBeGreaterThan(1);
@@ -309,7 +409,7 @@ describe("ModelRegistry", () => {
 				),
 			});
 
-			const registry = await createModelRegistry(authStorage, modelsJsonPath);
+			const registry = await createRegistry();
 			const models = getModelsForProvider(registry, "openrouter");
 			const sonnetModels = models.filter((m) => m.id === "anthropic/claude-sonnet-4");
 
@@ -322,7 +422,7 @@ describe("ModelRegistry", () => {
 				anthropic: providerConfig("https://my-proxy.example.com/v1", [{ id: "claude-custom" }]),
 			});
 
-			const registry = await createModelRegistry(authStorage, modelsJsonPath);
+			const registry = await createRegistry();
 
 			expect(getModelsForProvider(registry, "google").length).toBeGreaterThan(0);
 			expect(getModelsForProvider(registry, "openai").length).toBeGreaterThan(0);
@@ -333,7 +433,7 @@ describe("ModelRegistry", () => {
 				anthropic: providerConfig("https://merged-proxy.example.com/v1", [{ id: "claude-custom" }]),
 			});
 
-			const registry = await createModelRegistry(authStorage, modelsJsonPath);
+			const registry = await createRegistry();
 			const anthropicModels = getModelsForProvider(registry, "anthropic");
 
 			for (const model of anthropicModels) {
@@ -364,7 +464,7 @@ describe("ModelRegistry", () => {
 				},
 			});
 
-			const registry = await createModelRegistry(authStorage, modelsJsonPath);
+			const registry = await createRegistry();
 			const compat = registry.find("demo", "demo-model")?.compat as OpenAICompletionsCompat | undefined;
 
 			expect(compat?.supportsUsageInStreaming).toBe(false);
@@ -398,7 +498,7 @@ describe("ModelRegistry", () => {
 				},
 			});
 
-			const registry = await createModelRegistry(authStorage, modelsJsonPath);
+			const registry = await createRegistry();
 			const compat = registry.find("demo", "demo-model")?.compat as OpenAICompletionsCompat | undefined;
 
 			expect(compat?.supportsUsageInStreaming).toBe(true);
@@ -415,7 +515,7 @@ describe("ModelRegistry", () => {
 				},
 			});
 
-			const registry = await createModelRegistry(authStorage, modelsJsonPath);
+			const registry = await createRegistry();
 			const models = getModelsForProvider(registry, "openrouter");
 
 			expect(models.length).toBeGreaterThan(0);
@@ -453,7 +553,7 @@ describe("ModelRegistry", () => {
 				},
 			});
 
-			const registry = await createModelRegistry(authStorage, modelsJsonPath);
+			const registry = await createRegistry();
 			const model = registry.find("demo", "demo-model");
 			const compat = model?.compat as OpenAICompletionsCompat | undefined;
 
@@ -503,7 +603,7 @@ describe("ModelRegistry", () => {
 				},
 			});
 
-			const registry = await createModelRegistry(authStorage, modelsJsonPath);
+			const registry = await createRegistry();
 			const kwargsCompat = registry.find("demo", "kwargs-model")?.compat as OpenAICompletionsCompat | undefined;
 			const argsCompat = registry.find("demo", "args-model")?.compat as OpenAICompletionsCompat | undefined;
 
@@ -541,7 +641,7 @@ describe("ModelRegistry", () => {
 				},
 			});
 
-			const registry = await createModelRegistry(authStorage, modelsJsonPath);
+			const registry = await createRegistry();
 			const compat = registry.find("demo", "demo-model")?.compat as AnthropicMessagesCompat | undefined;
 
 			expect(registry.getError()).toBeUndefined();
@@ -570,7 +670,7 @@ describe("ModelRegistry", () => {
 				},
 			});
 
-			const registry = await createModelRegistry(authStorage, modelsJsonPath);
+			const registry = await createRegistry();
 			const compat = registry.find("demo", "demo-model")?.compat as AnthropicMessagesCompat | undefined;
 
 			expect(registry.getError()).toBeUndefined();
@@ -606,7 +706,7 @@ describe("ModelRegistry", () => {
 				},
 			});
 
-			const registry = await createModelRegistry(authStorage, modelsJsonPath);
+			const registry = await createRegistry();
 			const m25 = registry.find("opencode-go", "minimax-m2.5");
 			const glm5 = registry.find("opencode-go", "glm-5");
 
@@ -639,7 +739,7 @@ describe("ModelRegistry", () => {
 				},
 			});
 
-			const registry = await createModelRegistry(authStorage, modelsJsonPath);
+			const registry = await createRegistry();
 			const models = getModelsForProvider(registry, "openrouter");
 
 			expect(models.some((m) => m.id === "custom/openrouter-model")).toBe(true);
@@ -652,7 +752,7 @@ describe("ModelRegistry", () => {
 			writeModelsJson({
 				anthropic: providerConfig("https://first-proxy.example.com/v1", [{ id: "claude-custom" }]),
 			});
-			const registry = await createModelRegistry(authStorage, modelsJsonPath);
+			const registry = await createRegistry();
 			expect(getModelsForProvider(registry, "anthropic").some((m) => m.id === "claude-custom")).toBe(true);
 
 			// Update and refresh
@@ -671,7 +771,7 @@ describe("ModelRegistry", () => {
 			writeModelsJson({
 				anthropic: providerConfig("https://proxy.example.com/v1", [{ id: "claude-custom" }]),
 			});
-			const registry = await createModelRegistry(authStorage, modelsJsonPath);
+			const registry = await createRegistry();
 			expect(getModelsForProvider(registry, "anthropic").some((m) => m.id === "claude-custom")).toBe(true);
 
 			// Remove custom models and refresh
@@ -696,7 +796,7 @@ describe("ModelRegistry", () => {
 				},
 			});
 
-			const registry = await createModelRegistry(authStorage, modelsJsonPath);
+			const registry = await createRegistry();
 			const models = getModelsForProvider(registry, "openrouter");
 
 			const sonnet = models.find((m) => m.id === "anthropic/claude-sonnet-4");
@@ -726,7 +826,7 @@ describe("ModelRegistry", () => {
 				},
 			});
 
-			const registry = await createModelRegistry(authStorage, modelsJsonPath);
+			const registry = await createRegistry();
 			const models = getModelsForProvider(registry, "openrouter");
 
 			const custom = models.find((m) => m.id === "custom/sampling-model");
@@ -753,7 +853,7 @@ describe("ModelRegistry", () => {
 				},
 			});
 
-			const registry = await createModelRegistry(authStorage, modelsJsonPath);
+			const registry = await createRegistry();
 			const models = getModelsForProvider(registry, "openrouter");
 
 			const sonnet = models.find((m) => m.id === "anthropic/claude-sonnet-4");
@@ -774,7 +874,7 @@ describe("ModelRegistry", () => {
 				},
 			});
 
-			const registry = await createModelRegistry(authStorage, modelsJsonPath);
+			const registry = await createRegistry();
 			const models = getModelsForProvider(registry, "openrouter");
 			const sonnet = models.find((m) => m.id === "anthropic/claude-sonnet-4");
 
@@ -797,7 +897,7 @@ describe("ModelRegistry", () => {
 				},
 			});
 
-			const registry = await createModelRegistry(authStorage, modelsJsonPath);
+			const registry = await createRegistry();
 			const models = getModelsForProvider(registry, "openrouter");
 
 			const sonnet = models.find((m) => m.id === "anthropic/claude-sonnet-4");
@@ -821,7 +921,7 @@ describe("ModelRegistry", () => {
 				},
 			});
 
-			const registry = await createModelRegistry(authStorage, modelsJsonPath);
+			const registry = await createRegistry();
 			const models = getModelsForProvider(registry, "openrouter");
 			const sonnet = models.find((m) => m.id === "anthropic/claude-sonnet-4");
 
@@ -846,7 +946,7 @@ describe("ModelRegistry", () => {
 				},
 			});
 
-			const registry = await createModelRegistry(authStorage, modelsJsonPath);
+			const registry = await createRegistry();
 			const models = getModelsForProvider(registry, "openrouter");
 
 			// Should not create a new model
@@ -866,7 +966,7 @@ describe("ModelRegistry", () => {
 				},
 			});
 
-			const registry = await createModelRegistry(authStorage, modelsJsonPath);
+			const registry = await createRegistry();
 			const models = getModelsForProvider(registry, "openrouter");
 			const sonnet = models.find((m) => m.id === "anthropic/claude-sonnet-4");
 
@@ -887,7 +987,7 @@ describe("ModelRegistry", () => {
 				},
 			});
 
-			const registry = await createModelRegistry(authStorage, modelsJsonPath);
+			const registry = await createRegistry();
 			const models = getModelsForProvider(registry, "openrouter");
 			const sonnet = models.find((m) => m.id === "anthropic/claude-sonnet-4");
 			expect(sonnet).toBeDefined();
@@ -910,7 +1010,7 @@ describe("ModelRegistry", () => {
 				},
 			});
 
-			const registry = await createModelRegistry(authStorage, modelsJsonPath);
+			const registry = await createRegistry();
 			expect(
 				getModelsForProvider(registry, "openrouter").find((m) => m.id === "anthropic/claude-sonnet-4")?.name,
 			).toBe("First Name");
@@ -943,7 +1043,7 @@ describe("ModelRegistry", () => {
 				},
 			});
 
-			const registry = await createModelRegistry(authStorage, modelsJsonPath);
+			const registry = await createRegistry();
 			const customName = getModelsForProvider(registry, "openrouter").find(
 				(m) => m.id === "anthropic/claude-sonnet-4",
 			)?.name;
@@ -962,7 +1062,7 @@ describe("ModelRegistry", () => {
 
 	describe("dynamic provider lifecycle", () => {
 		test("getProviderDisplayName resolves registered, OAuth, built-in, and fallback names", async () => {
-			const registry = await createModelRegistry(authStorage, modelsJsonPath);
+			const registry = await createRegistry();
 
 			expect(registry.getProviderDisplayName("openai")).toBe("OpenAI");
 			expect(registry.getProviderDisplayName("github-copilot")).toBe("GitHub Copilot");
@@ -1025,7 +1125,7 @@ describe("ModelRegistry", () => {
 				},
 			});
 
-			const registry = await createModelRegistry(authStorage, modelsJsonPath);
+			const registry = await createRegistry();
 			registry.registerProvider("extension-provider", {
 				baseUrl: "https://provider.test/v1",
 				apiKey: "test-key",
@@ -1073,7 +1173,7 @@ describe("ModelRegistry", () => {
 			const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 
 			try {
-				const registry = await createModelRegistry(authStorage, modelsJsonPath);
+				const registry = await createRegistry();
 
 				registry.registerProvider("literal-provider", {
 					...providerConfig("https://provider.test/v1", [{ id: "demo-model" }], "openai-completions"),
@@ -1117,7 +1217,7 @@ describe("ModelRegistry", () => {
 		});
 
 		test("failed registerProvider does not persist invalid streamSimple config", async () => {
-			const registry = await createModelRegistry(authStorage, modelsJsonPath);
+			const registry = await createRegistry();
 
 			expect(() =>
 				registry.registerProvider("broken-provider", {
@@ -1131,7 +1231,7 @@ describe("ModelRegistry", () => {
 		});
 
 		test("failed registerProvider does not remove existing provider models", async () => {
-			const registry = await createModelRegistry(authStorage, modelsJsonPath);
+			const registry = await createRegistry();
 
 			registry.registerProvider("demo-provider", {
 				baseUrl: "https://provider.test/v1",
@@ -1176,7 +1276,7 @@ describe("ModelRegistry", () => {
 		});
 
 		test("unregisterProvider removes a runtime provider overlay without mutating global state", async () => {
-			const registry = await createModelRegistry(authStorage, modelsJsonPath);
+			const registry = await createRegistry();
 
 			registry.registerProvider("anthropic", {
 				apiKey: "$CUSTOM_ANTHROPIC_KEY",
@@ -1190,7 +1290,7 @@ describe("ModelRegistry", () => {
 		});
 
 		test("streamSimple overlays do not mutate the global compat API registry", async () => {
-			const registry = await createModelRegistry(authStorage, modelsJsonPath);
+			const registry = await createRegistry();
 
 			registry.registerProvider("stream-override-provider", {
 				api: "openai-completions",
@@ -1221,7 +1321,7 @@ describe("ModelRegistry", () => {
 
 		describe("dynamic provider override persistence", () => {
 			test("baseUrl-only override keeps built-in provider models after refresh", async () => {
-				const registry = await createModelRegistry(authStorage, modelsJsonPath);
+				const registry = await createRegistry();
 
 				registry.registerProvider("anthropic", { baseUrl: "https://proxy.test/anthropic" });
 				await registry.refresh();
@@ -1232,7 +1332,7 @@ describe("ModelRegistry", () => {
 			});
 
 			test("models-only override replaces built-in provider models after refresh", async () => {
-				const registry = await createModelRegistry(authStorage, modelsJsonPath);
+				const registry = await createRegistry();
 
 				registry.registerProvider("anthropic", {
 					...providerConfig("https://custom.test/anthropic", [{ id: "custom-claude" }], "anthropic-messages"),
@@ -1245,7 +1345,7 @@ describe("ModelRegistry", () => {
 			});
 
 			test("models plus baseUrl override replaces built-in provider models after refresh", async () => {
-				const registry = await createModelRegistry(authStorage, modelsJsonPath);
+				const registry = await createRegistry();
 
 				registry.registerProvider("anthropic", {
 					...providerConfig("https://custom.test/anthropic", [{ id: "custom-claude" }], "anthropic-messages"),
@@ -1259,7 +1359,7 @@ describe("ModelRegistry", () => {
 			});
 
 			test("models-only custom provider registration survives refresh", async () => {
-				const registry = await createModelRegistry(authStorage, modelsJsonPath);
+				const registry = await createRegistry();
 
 				registry.registerProvider(
 					"custom-provider",
@@ -1274,7 +1374,7 @@ describe("ModelRegistry", () => {
 			});
 
 			test("baseUrl-only override keeps custom provider models after refresh", async () => {
-				const registry = await createModelRegistry(authStorage, modelsJsonPath);
+				const registry = await createRegistry();
 
 				registry.registerProvider(
 					"custom-provider",
@@ -1295,7 +1395,7 @@ describe("ModelRegistry", () => {
 			});
 
 			test("headers-only override keeps custom provider models after refresh", async () => {
-				const registry = await createModelRegistry(authStorage, modelsJsonPath);
+				const registry = await createRegistry();
 
 				registry.registerProvider(
 					"custom-provider",
@@ -1341,7 +1441,7 @@ describe("ModelRegistry", () => {
 				"custom-provider": providerWithApiKey("!echo test-api-key-from-command"),
 			});
 
-			const registry = await createModelRegistry(authStorage, modelsJsonPath);
+			const registry = await createRegistry();
 			const apiKey = await registry.getApiKeyForProvider("custom-provider");
 
 			expect(apiKey).toBe("test-api-key-from-command");
@@ -1352,7 +1452,7 @@ describe("ModelRegistry", () => {
 				"custom-provider": providerWithApiKey("!echo '  spaced-key  '"),
 			});
 
-			const registry = await createModelRegistry(authStorage, modelsJsonPath);
+			const registry = await createRegistry();
 			const apiKey = await registry.getApiKeyForProvider("custom-provider");
 
 			expect(apiKey).toBe("spaced-key");
@@ -1363,7 +1463,7 @@ describe("ModelRegistry", () => {
 				"custom-provider": providerWithApiKey("!printf 'line1\\nline2'"),
 			});
 
-			const registry = await createModelRegistry(authStorage, modelsJsonPath);
+			const registry = await createRegistry();
 			const apiKey = await registry.getApiKeyForProvider("custom-provider");
 
 			expect(apiKey).toBe("line1\nline2");
@@ -1374,7 +1474,7 @@ describe("ModelRegistry", () => {
 				"custom-provider": providerWithApiKey("!exit 1"),
 			});
 
-			const registry = await createModelRegistry(authStorage, modelsJsonPath);
+			const registry = await createRegistry();
 			const apiKey = await registry.getApiKeyForProvider("custom-provider");
 
 			expect(apiKey).toBeUndefined();
@@ -1385,7 +1485,7 @@ describe("ModelRegistry", () => {
 				"custom-provider": providerWithApiKey("!nonexistent-command-12345"),
 			});
 
-			const registry = await createModelRegistry(authStorage, modelsJsonPath);
+			const registry = await createRegistry();
 			const apiKey = await registry.getApiKeyForProvider("custom-provider");
 
 			expect(apiKey).toBeUndefined();
@@ -1396,7 +1496,7 @@ describe("ModelRegistry", () => {
 				"custom-provider": providerWithApiKey("!printf ''"),
 			});
 
-			const registry = await createModelRegistry(authStorage, modelsJsonPath);
+			const registry = await createRegistry();
 			const apiKey = await registry.getApiKeyForProvider("custom-provider");
 
 			expect(apiKey).toBeUndefined();
@@ -1411,7 +1511,7 @@ describe("ModelRegistry", () => {
 					"custom-provider": providerWithApiKey("$TEST_API_KEY_12345"),
 				});
 
-				const registry = await createModelRegistry(authStorage, modelsJsonPath);
+				const registry = await createRegistry();
 				const apiKey = await registry.getApiKeyForProvider("custom-provider");
 
 				expect(apiKey).toBe("env-api-key-value");
@@ -1434,7 +1534,7 @@ describe("ModelRegistry", () => {
 					"custom-provider": providerWithApiKey(bracedKey),
 				});
 
-				const registry = await createModelRegistry(authStorage, modelsJsonPath);
+				const registry = await createRegistry();
 				const apiKey = await registry.getApiKeyForProvider("custom-provider");
 
 				expect(apiKey).toBe("braced-env-api-key-value");
@@ -1461,7 +1561,7 @@ describe("ModelRegistry", () => {
 					"custom-provider": providerWithApiKey(interpolatedKey),
 				});
 
-				const registry = await createModelRegistry(authStorage, modelsJsonPath);
+				const registry = await createRegistry();
 				const apiKey = await registry.getApiKeyForProvider("custom-provider");
 
 				expect(apiKey).toBe("left_right");
@@ -1484,7 +1584,7 @@ describe("ModelRegistry", () => {
 				"custom-provider": providerWithApiKey("$$TEST_API_KEY_12345"),
 			});
 
-			const registry = await createModelRegistry(authStorage, modelsJsonPath);
+			const registry = await createRegistry();
 			const apiKey = await registry.getApiKeyForProvider("custom-provider");
 
 			expect(apiKey).toBe("$TEST_API_KEY_12345");
@@ -1499,7 +1599,7 @@ describe("ModelRegistry", () => {
 					"custom-provider": providerWithApiKey("$!literal-$TEST_API_KEY_12345"),
 				});
 
-				const registry = await createModelRegistry(authStorage, modelsJsonPath);
+				const registry = await createRegistry();
 				const apiKey = await registry.getApiKeyForProvider("custom-provider");
 
 				expect(apiKey).toBe("!literal-env-api-key-value");
@@ -1521,7 +1621,7 @@ describe("ModelRegistry", () => {
 					"custom-provider": providerWithApiKey("TEST_API_KEY_12345"),
 				});
 
-				const registry = await createModelRegistry(authStorage, modelsJsonPath);
+				const registry = await createRegistry();
 				const apiKey = await registry.getApiKeyForProvider("custom-provider");
 
 				expect(apiKey).toBe("TEST_API_KEY_12345");
@@ -1542,7 +1642,7 @@ describe("ModelRegistry", () => {
 				"custom-provider": providerWithApiKey("literal_api_key_value"),
 			});
 
-			const registry = await createModelRegistry(authStorage, modelsJsonPath);
+			const registry = await createRegistry();
 			const apiKey = await registry.getApiKeyForProvider("custom-provider");
 
 			expect(apiKey).toBe("literal_api_key_value");
@@ -1553,7 +1653,7 @@ describe("ModelRegistry", () => {
 				"custom-provider": providerWithApiKey("!echo 'hello world' | tr ' ' '-'"),
 			});
 
-			const registry = await createModelRegistry(authStorage, modelsJsonPath);
+			const registry = await createRegistry();
 			const apiKey = await registry.getApiKeyForProvider("custom-provider");
 
 			expect(apiKey).toBe("hello-world");
@@ -1570,7 +1670,7 @@ describe("ModelRegistry", () => {
 					"custom-provider": providerWithApiKey(command),
 				});
 
-				const registry = await createModelRegistry(authStorage, modelsJsonPath);
+				const registry = await createRegistry();
 				await registry.getApiKeyForProvider("custom-provider");
 				await registry.getApiKeyForProvider("custom-provider");
 				await registry.getApiKeyForProvider("custom-provider");
@@ -1589,10 +1689,10 @@ describe("ModelRegistry", () => {
 					"custom-provider": providerWithApiKey(command),
 				});
 
-				const registry1 = await createModelRegistry(authStorage, modelsJsonPath);
+				const registry1 = await createRegistry();
 				await registry1.getApiKeyForProvider("custom-provider");
 
-				const registry2 = await createModelRegistry(authStorage, modelsJsonPath);
+				const registry2 = await createRegistry();
 				await registry2.getApiKeyForProvider("custom-provider");
 
 				const count = parseInt(readFileSync(counterFile, "utf-8").trim(), 10);
@@ -1605,7 +1705,7 @@ describe("ModelRegistry", () => {
 					"provider-b": providerWithApiKey("!echo key-b"),
 				});
 
-				const registry = await createModelRegistry(authStorage, modelsJsonPath);
+				const registry = await createRegistry();
 
 				const keyA = await registry.getApiKeyForProvider("provider-a");
 				const keyB = await registry.getApiKeyForProvider("provider-b");
@@ -1624,7 +1724,7 @@ describe("ModelRegistry", () => {
 					"custom-provider": providerWithApiKey(command),
 				});
 
-				const registry = await createModelRegistry(authStorage, modelsJsonPath);
+				const registry = await createRegistry();
 				const key1 = await registry.getApiKeyForProvider("custom-provider");
 				const key2 = await registry.getApiKeyForProvider("custom-provider");
 
@@ -1646,7 +1746,7 @@ describe("ModelRegistry", () => {
 						"custom-provider": providerWithApiKey(`$${envVarName}`),
 					});
 
-					const registry = await createModelRegistry(authStorage, modelsJsonPath);
+					const registry = await createRegistry();
 
 					expect(registry.getProviderAuthStatus("custom-provider")).toEqual({
 						configured: true,
@@ -1676,7 +1776,7 @@ describe("ModelRegistry", () => {
 						"custom-provider": providerWithApiKey(interpolatedKey),
 					});
 
-					const registry = await createModelRegistry(authStorage, modelsJsonPath);
+					const registry = await createRegistry();
 
 					expect(registry.getProviderAuthStatus("custom-provider")).toEqual({
 						configured: true,
@@ -1702,7 +1802,7 @@ describe("ModelRegistry", () => {
 					"custom-provider": providerWithApiKey("literal_api_key_value"),
 				});
 
-				const registry = await createModelRegistry(authStorage, modelsJsonPath);
+				const registry = await createRegistry();
 
 				expect(registry.getProviderAuthStatus("custom-provider")).toEqual({
 					configured: true,
@@ -1720,7 +1820,7 @@ describe("ModelRegistry", () => {
 						"custom-provider": providerWithApiKey(`$${envVarName}`),
 					});
 
-					const registry = await createModelRegistry(authStorage, modelsJsonPath);
+					const registry = await createRegistry();
 
 					expect(registry.getProviderAuthStatus("custom-provider")).toEqual({ configured: false });
 					expect(registry.getAvailable().some((model) => model.provider === "custom-provider")).toBe(false);
@@ -1742,7 +1842,7 @@ describe("ModelRegistry", () => {
 					"custom-provider": providerWithApiKey(command),
 				});
 
-				const registry = await createModelRegistry(authStorage, modelsJsonPath);
+				const registry = await createRegistry();
 
 				expect(registry.getProviderAuthStatus("custom-provider")).toEqual({
 					configured: true,
@@ -1762,7 +1862,7 @@ describe("ModelRegistry", () => {
 						"custom-provider": providerWithApiKey(`$${envVarName}`),
 					});
 
-					const registry = await createModelRegistry(authStorage, modelsJsonPath);
+					const registry = await createRegistry();
 
 					const key1 = await registry.getApiKeyForProvider("custom-provider");
 					expect(key1).toBe("first-value");
@@ -1790,7 +1890,7 @@ describe("ModelRegistry", () => {
 					"custom-provider": providerWithApiKey(command),
 				});
 
-				const registry = await createModelRegistry(authStorage, modelsJsonPath);
+				const registry = await createRegistry();
 				const available = registry.getAvailable();
 
 				expect(available.some((m) => m.provider === "custom-provider")).toBe(true);
@@ -1810,7 +1910,7 @@ describe("ModelRegistry", () => {
 					},
 				});
 
-				const registry = await createModelRegistry(authStorage, modelsJsonPath);
+				const registry = await createRegistry();
 				const model = registry.find("custom-provider", "test-model");
 				expect(model).toBeDefined();
 
@@ -1844,7 +1944,7 @@ describe("ModelRegistry", () => {
 					},
 				});
 
-				const registry = await createModelRegistry(authStorage, modelsJsonPath);
+				const registry = await createRegistry();
 				const auth = await registry.getApiKeyAndHeaders(registry.find("custom-provider", "test-model")!);
 
 				expect(auth).toEqual({
@@ -1864,7 +1964,7 @@ describe("ModelRegistry", () => {
 				});
 				await authStorage.modify("custom-provider", async () => ({ type: "api_key", key: "stored-key" }));
 
-				const registry = await createModelRegistry(authStorage, modelsJsonPath);
+				const registry = await createRegistry();
 				const auth = await registry.getApiKeyAndHeaders(registry.find("custom-provider", "test-model")!);
 
 				expect(auth).toMatchObject({ ok: true, apiKey: "stored-key" });
@@ -1881,7 +1981,7 @@ describe("ModelRegistry", () => {
 					},
 				});
 
-				const registry = await createModelRegistry(authStorage, modelsJsonPath);
+				const registry = await createRegistry();
 				const auth = await registry.getApiKeyAndHeaders(registry.find("custom-provider", "test-model")!);
 
 				expect(auth).toEqual({ ok: false, error: 'No API key found for "custom-provider"' });
@@ -1895,7 +1995,7 @@ describe("ModelRegistry", () => {
 					},
 				});
 
-				const registry = await createModelRegistry(authStorage, modelsJsonPath);
+				const registry = await createRegistry();
 				const model = registry.find("custom-provider", "test-model");
 				expect(model).toBeDefined();
 

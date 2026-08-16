@@ -8,7 +8,7 @@ import { createAgentSession } from "../src/core/sdk.ts";
 import { SessionManager } from "../src/core/session-manager.ts";
 import { SettingsManager } from "../src/core/settings-manager.ts";
 import { createBashTool } from "../src/core/tools/bash.ts";
-import { testModel } from "./utilities.ts";
+import { createTestModelRuntime, testModel } from "./utilities.ts";
 
 describe("AgentSession dynamic tool registration", () => {
 	let tempDir: string;
@@ -63,6 +63,7 @@ describe("AgentSession dynamic tool registration", () => {
 
 		const model = testModel();
 		const { session } = await createAgentSession({
+			modelRuntime: await createTestModelRuntime(),
 			cwd: tempDir,
 			agentDir,
 			model,
@@ -126,6 +127,7 @@ describe("AgentSession dynamic tool registration", () => {
 		await resourceLoader.reload();
 
 		const { session } = await createAgentSession({
+			modelRuntime: await createTestModelRuntime(),
 			cwd: tempDir,
 			agentDir,
 			model: testModel(),
@@ -176,6 +178,7 @@ describe("AgentSession dynamic tool registration", () => {
 		await resourceLoader.reload();
 
 		const { session } = await createAgentSession({
+			modelRuntime: await createTestModelRuntime(),
 			cwd: tempDir,
 			agentDir,
 			model: testModel(),
@@ -236,6 +239,7 @@ describe("AgentSession dynamic tool registration", () => {
 		await resourceLoader.reload();
 
 		const { session } = await createAgentSession({
+			modelRuntime: await createTestModelRuntime(),
 			cwd: tempDir,
 			agentDir,
 			model: testModel(),

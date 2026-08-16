@@ -1,6 +1,6 @@
-import { createModelRegistry, getModelRuntime, testModel } from "./model-runtime-test-utils.ts";
+import { createModelRegistry, getModelRuntime, registerTestFaux, testModel } from "./model-runtime-test-utils.ts";
 
-export { testModel } from "./model-runtime-test-utils.ts";
+export { createTestModelRuntime, testModel } from "./model-runtime-test-utils.ts";
 
 /**
  * Shared test utilities for coding-agent tests.
@@ -228,6 +228,7 @@ export async function createTestSession(options: TestSessionOptions = {}): Promi
 
 	const authStorage = AuthStorage.create(join(tempDir, "auth.json"));
 	const modelRegistry = await createModelRegistry(authStorage, tempDir);
+	registerTestFaux(getModelRuntime(modelRegistry));
 
 	const session = new AgentSession({
 		agent,

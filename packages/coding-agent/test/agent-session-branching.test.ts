@@ -21,7 +21,7 @@ import {
 } from "../src/core/agent-session-runtime.ts";
 import { AuthStorage } from "../src/core/auth-storage.ts";
 import { SessionManager } from "../src/core/session-manager.ts";
-import { API_KEY, testModel } from "./utilities.ts";
+import { API_KEY, createTestModelRuntime, testModel } from "./utilities.ts";
 
 describe.skipIf(!API_KEY)("AgentSession forking", () => {
 	let session: AgentSession;
@@ -61,6 +61,7 @@ describe.skipIf(!API_KEY)("AgentSession forking", () => {
 		};
 		const createRuntime: CreateAgentSessionRuntimeFactory = async ({ cwd, sessionManager, sessionStartEvent }) => {
 			const services = await createAgentSessionServices({
+				modelRuntime: await createTestModelRuntime(),
 				...servicesOptions,
 				cwd,
 			});

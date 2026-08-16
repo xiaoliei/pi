@@ -8,7 +8,7 @@ import { DefaultResourceLoader } from "../src/core/resource-loader.ts";
 import { type CreateAgentSessionOptions, createAgentSession, type InlineExtension } from "../src/core/sdk.ts";
 import { SessionManager } from "../src/core/session-manager.ts";
 import { SettingsManager } from "../src/core/settings-manager.ts";
-import { testModel } from "./utilities.ts";
+import { createTestModelRuntime, testModel } from "./utilities.ts";
 
 type ToolOptions = Pick<CreateAgentSessionOptions, "tools" | "excludeTools" | "noTools" | "customTools">;
 
@@ -44,6 +44,7 @@ describe("defaultTools setting", () => {
 
 		return (
 			await createAgentSession({
+				modelRuntime: await createTestModelRuntime(),
 				cwd: tempDir,
 				agentDir,
 				model: testModel(),
@@ -131,7 +132,12 @@ describe("defaultTools setting", () => {
 
 	it("applies through service-based session creation", async () => {
 		const settingsManager = SettingsManager.inMemory({ defaultTools: ["ls"] });
-		const services = await createAgentSessionServices({ cwd: tempDir, agentDir, settingsManager });
+		const services = await createAgentSessionServices({
+			cwd: tempDir,
+			agentDir,
+			settingsManager,
+			modelRuntime: await createTestModelRuntime(),
+		});
 		const { session } = await createAgentSessionFromServices({
 			services,
 			sessionManager: SessionManager.inMemory(tempDir),

@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createAgentSession } from "../src/core/sdk.ts";
 import { SessionManager } from "../src/core/session-manager.ts";
-import { testModel } from "./utilities.ts";
+import { createTestModelRuntime, testModel } from "./utilities.ts";
 
 describe("createAgentSession session manager defaults", () => {
 	let tempDir: string;
@@ -30,6 +30,7 @@ describe("createAgentSession session manager defaults", () => {
 		expect(model).toBeTruthy();
 
 		const { session } = await createAgentSession({
+			modelRuntime: await createTestModelRuntime(),
 			cwd,
 			agentDir,
 			model: model!,
@@ -52,6 +53,7 @@ describe("createAgentSession session manager defaults", () => {
 
 		const sessionManager = SessionManager.inMemory(cwd);
 		const { session } = await createAgentSession({
+			modelRuntime: await createTestModelRuntime(),
 			cwd,
 			agentDir,
 			model: model!,
@@ -72,6 +74,7 @@ describe("createAgentSession session manager defaults", () => {
 		mkdirSync(sessionCwd, { recursive: true });
 		const sessionManager = SessionManager.inMemory(sessionCwd);
 		const { session } = await createAgentSession({
+			modelRuntime: await createTestModelRuntime(),
 			agentDir,
 			model: model!,
 			sessionManager,
@@ -98,6 +101,7 @@ describe("createAgentSession session manager defaults", () => {
 		expect(model).toBeTruthy();
 
 		const { session } = await createAgentSession({
+			modelRuntime: await createTestModelRuntime(),
 			cwd,
 			agentDir,
 			model: model!,
