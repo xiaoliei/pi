@@ -439,13 +439,13 @@ for (const diagnostic of diagnostics) {
 
 > See [examples/sdk/02-custom-model.ts](../examples/sdk/02-custom-model.ts)
 
-### API Keys and OAuth
+### Endpoints and API Keys
 
-Authentication resolution priority (handled by `ModelRuntime`):
+Endpoints live in `models.json` (created with `/connect` or hand edits). Auth
+resolution priority (handled by `ModelRuntime`):
 1. Runtime overrides (via `setRuntimeApiKey`, not persisted)
-2. Stored credentials in `auth.json` (API keys or OAuth tokens)
-3. Environment variables (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, etc.)
-4. Fallback resolver (for custom provider keys from `models.json`)
+2. Stored credentials in `auth.json` (API keys)
+3. Endpoint keys from `models.json` (literal, `$ENV_VAR`, or `!command`)
 
 ```typescript
 import { InMemoryCredentialStore } from "@earendil-works/pi-ai";
@@ -478,9 +478,15 @@ const { session } = await createAgentSession({
 });
 ```
 
-`login()`, `logout()`, `setRuntimeApiKey()`, and `removeRuntimeApiKey()` resolve after the affected provider's cached/built-in catalog, composition, and availability snapshot are locally consistent. They do not wait for remote catalog freshness. If credentials were committed but local synchronization fails, they reject with the exported `CredentialSynchronizationError`; inspect its `providerId`, `operation`, `credential`, and `cause` fields instead of retrying the credential mutation blindly.
+`setRuntimeApiKey()` and `removeRuntimeApiKey()` resolve after the affected
+provider's composition and availability snapshot are locally consistent. If
+the runtime key was committed but local synchronization fails, they reject
+with the exported `CredentialSynchronizationError`; inspect its `providerId`,
+`operation`, `credential`, and `cause` fields instead of retrying the mutation
+blindly.
 
-Public model/auth operations and `ModelRuntime.create({ signal })` accept optional abort signals and are unbounded when omitted. SDK applications own deadline policy for remote catalog freshness:
+Public model/auth operations and `ModelRuntime.create({ signal })` accept
+optional abort signals and are unbounded when omitted:
 
 ```typescript
 const signal = AbortSignal.timeout(15_000);
@@ -494,7 +500,9 @@ for (const [providerId, error] of result.errors) {
 }
 ```
 
-A failed or timed-out network refresh does not undo a successful credential operation. `refresh()` starts a new provider generation, so it does not wait behind an older stalled refresh and stale generations cannot publish afterward.
+A failed or timed-out network refresh does not undo a successful runtime key
+operation. `refresh()` starts a new provider generation, so it does not wait
+behind an older stalled refresh and stale generations cannot publish afterward.
 
 > See [examples/sdk/09-api-keys-and-oauth.ts](../examples/sdk/09-api-keys-and-oauth.ts)
 

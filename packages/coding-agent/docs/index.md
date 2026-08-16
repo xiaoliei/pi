@@ -32,7 +32,8 @@ Then run it in a project directory:
 pi
 ```
 
-Authenticate with `/login` for subscription providers, or set an API key such as `ANTHROPIC_API_KEY` before starting pi.
+Add an API endpoint with `/connect` (or write `~/.pi/agent/models.json`); pi
+opens the wizard automatically when no models are available.
 
 For the full first-run flow, see [Quickstart](quickstart.md).
 
@@ -40,8 +41,8 @@ For the full first-run flow, see [Quickstart](quickstart.md).
 
 - [Quickstart](quickstart.md) - install, authenticate, and run a first session.
 - [Using Pi](usage.md) - interactive mode, slash commands, context files, and CLI reference.
-- [Providers](providers.md) - subscription and API-key setup for built-in providers.
-- [llama.cpp](llama-cpp.md) - run a local router and manage models with `/llama`.
+- [Providers](providers.md) - add API endpoints with `/connect`.
+- [llama.cpp](llama-cpp.md) - run a local router and add it as an endpoint.
 - [Security](security.md) - project trust, sandbox boundaries, and vulnerability reporting.
 - [Containerization](containerization.md) - sandbox pi with Gondolin, Docker, or OpenShell.
 - [Settings](settings.md) - global and project settings.
@@ -57,7 +58,7 @@ For the full first-run flow, see [Quickstart](quickstart.md).
 - [Themes](themes.md) - built-in and custom terminal themes.
 - [Pi packages](packages.md) - bundle and share extensions, skills, prompts, and themes.
 - [Custom models](models.md) - add model entries for supported provider APIs.
-- [Custom providers](custom-provider.md) - implement custom APIs and OAuth flows.
+- [Custom providers](custom-provider.md) - implement custom APIs.
 
 ## Programmatic usage
 

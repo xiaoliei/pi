@@ -34,7 +34,9 @@ For local models (Ollama, LM Studio, vLLM), only `id` is required per model:
 }
 ```
 
-The `apiKey` value is a placeholder because Ollama ignores it. pi still treats models as requiring auth before they appear in `/model`, so keyless local servers should keep a dummy value, save a key for that provider with `/login`, or pass `--api-key` when selecting the model.
+The `apiKey` value is a placeholder because Ollama ignores it. Keyless local
+servers simply omit `apiKey`; the endpoint still composes and its models appear
+once selected.
 
 Some OpenAI-compatible servers do not understand the `developer` role used for reasoning-capable models. For those providers, set `compat.supportsDeveloperRole` to `false` so pi sends the system prompt as a `system` message instead. If the server also does not support `reasoning_effort`, set `compat.supportsReasoningEffort` to `false` too.
 
@@ -135,14 +137,17 @@ Set `api` at provider level (default for all models) or model level (override pe
 |-------|-------------|
 | `baseUrl` | API endpoint URL |
 | `api` | API type (see above) |
-| `apiKey` | Optional API key config (see value resolution below). Omit it when auth is provided by `/login`/`auth.json` or CLI `--api-key`. |
-| `oauth` | Dynamic OAuth provider type. Currently supports `"radius"`; requires the gateway `baseUrl`. |
+| `apiKey` | Optional API key config (see value resolution below). Omit for keyless local servers. |
+| `enabled` | Per-model selection toggle: `false` hides the model from `/model` and `--list-models` while direct lookups still resolve it. |
 | `headers` | Custom headers (see value resolution below) |
 | `authHeader` | Set `true` to add `Authorization: Bearer <apiKey>` automatically |
 | `models` | Array of model configurations |
 | `modelOverrides` | Per-model overrides for built-in or extension-registered models on this provider |
 
-For providers with `models`, non-built-in provider configs need `baseUrl` and an `api` value at either provider or model level. `apiKey` is not required to load the file: models become available when auth is configured through `/login`/`auth.json`, CLI `--api-key`, or provider `apiKey`. If no auth is configured, the models load but stay unavailable in `/model` and `--list-models`.
+Endpoint configs need `baseUrl` and an `api` value at either provider or model
+level. `apiKey` is optional (keyless local servers omit it). If a key is
+configured, the models are available in `/model` and `--list-models`; without
+one, they stay unavailable until a key is added in `/connect`.
 
 ### Value Resolution
 
@@ -297,9 +302,10 @@ Example for a model where thinking cannot be disabled:
 
 Migration: older configs that used `compat.reasoningEffortMap` should move that mapping to model-level `thinkingLevelMap`. Use `null` for levels that should not appear in the UI.
 
-## Overriding Built-in Providers
+## Overriding Extension Providers
 
-Route a built-in provider through a proxy without redefining models:
+Route an extension-registered provider through a proxy without redefining
+models:
 
 ```json
 {
@@ -311,9 +317,9 @@ Route a built-in provider through a proxy without redefining models:
 }
 ```
 
-All built-in Anthropic models remain available. Existing OAuth or API key auth continues to work.
+The extension's models remain available with the overridden base URL.
 
-To merge custom models into a built-in provider, include the `models` array:
+To merge custom models into an extension provider, include the `models` array:
 
 ```json
 {
@@ -329,14 +335,14 @@ To merge custom models into a built-in provider, include the `models` array:
 ```
 
 Merge semantics:
-- Built-in models are kept.
+- Extension models are kept.
 - Custom models are upserted by `id` within the provider.
-- If a custom model `id` matches a built-in model `id`, the custom model replaces that built-in model.
-- If a custom model `id` is new, it is added alongside built-in models.
+- If a custom model `id` matches an extension model `id`, the custom model replaces it.
+- If a custom model `id` is new, it is added alongside extension models.
 
 ## Per-model Overrides
 
-Use `modelOverrides` to customize built-in models and matching extension-registered models without replacing the provider's full model list.
+Use `modelOverrides` to customize endpoint or extension-registered models without replacing the provider's full model list.
 
 ```json
 {
@@ -357,28 +363,10 @@ Use `modelOverrides` to customize built-in models and matching extension-registe
 }
 ```
 
-`modelOverrides` supports these fields per model: `name`, `reasoning`, `thinkingLevelMap`, `input`, `cost` (partial), `contextWindow`, `maxTokens`, `samplingParams` (merged per key), `headers`, `compat`.
-
-Direct OpenAI GPT-5.6 Sol, Terra, and Luna default to a `272000` context window so requests remain within OpenAI's short-context pricing tier. To opt into OpenAI's 1.05M context window, increase it for each model you use:
-
-```json
-{
-  "providers": {
-    "openai": {
-      "modelOverrides": {
-        "gpt-5.6-sol": {
-          "contextWindow": 1050000
-        }
-      }
-    }
-  }
-}
-```
-
-The override preserves the built-in pricing metadata. Requests with more than 272K total input tokens use GPT-5.6's long-context rates for the entire request. Apply the same override to `gpt-5.6-terra` or `gpt-5.6-luna` when needed.
+`modelOverrides` supports these fields per model: `name`, `enabled`, `reasoning`, `thinkingLevelMap`, `input`, `cost` (partial), `contextWindow`, `maxTokens`, `samplingParams` (merged per key), `headers`, `compat`.
 
 Behavior notes:
-- `modelOverrides` are applied to built-in provider models and matching extension-registered provider models.
+- `modelOverrides` are applied to endpoint models and matching extension-registered provider models.
 - Unknown model IDs are ignored.
 - You can combine provider-level `baseUrl`/`headers` with `modelOverrides`.
 - Overriding `name` changes model matching and secondary detail text only; the footer and primary model lists continue to show the model `id`.

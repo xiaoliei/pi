@@ -66,11 +66,13 @@ Build and run:
 docker build -t pi-sandbox -f Dockerfile.pi .
 
 docker run --rm -it \
-  -e ANTHROPIC_API_KEY \
   -v "$PWD:/workspace" \
   -v pi-agent-home:/root/.pi/agent \
   pi-sandbox
 ```
+
+Endpoint keys live in `~/.pi/agent/models.json` (see [providers.md](providers.md)),
+so the mounted agent home carries them into the container.
 
 The `-v "$PWD:/workspace"` mounts your current directory into the container at /workspace such that reads and writes in `/workspace` inside Docker directly affect your host files, like in the Gondolin example.
 

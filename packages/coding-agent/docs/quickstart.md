@@ -39,32 +39,17 @@ cd /path/to/project
 pi
 ```
 
-## Authenticate
+## Add an endpoint
 
-Pi can use subscription providers through `/login`, or API-key providers through environment variables or the auth file.
+Pi has no built-in providers. Add an API endpoint with `/connect` (or
+`~/.pi/agent/models.json`): a base URL, an API key, and a protocol
+(`openai-completions`, `openai-responses`, or `anthropic-messages`). You can
+optionally import models from the endpoint's `/models` API.
 
-### Option 1: subscription login
+When no models are available, pi opens `/connect` automatically; press Escape
+to skip.
 
-Start pi and run:
-
-```text
-/login
-```
-
-Then select a provider. Built-in subscription logins include Claude Pro/Max, ChatGPT Plus/Pro (Codex), and GitHub Copilot.
-
-### Option 2: API key
-
-Set an API key before launching pi:
-
-```bash
-export ANTHROPIC_API_KEY=sk-ant-...
-pi
-```
-
-You can also run `/login` and select an API-key provider to store the key in `~/.pi/agent/auth.json`.
-
-See [Providers](providers.md) for all supported providers, environment variables, and cloud-provider setup.
+See [Providers](providers.md) for endpoint setup.
 
 ## First session
 

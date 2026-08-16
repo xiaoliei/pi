@@ -85,7 +85,7 @@ Or use your existing subscription:
 
 ```bash
 pi
-/login  # Then select provider
+/connect  # Add baseUrl + key + protocol, optionally discover models
 ```
 
 Then just talk to pi. By default, pi gives the model four tools: `read`, `write`, `edit`, and `bash`. The model uses these to fulfill your requests. Add capabilities via [skills](#skills), [prompt templates](#prompt-templates), [extensions](#extensions), or [pi packages](#pi-packages).
@@ -96,51 +96,22 @@ Then just talk to pi. By default, pi gives the model four tools: `read`, `write`
 
 ## Providers & Models
 
-For each built-in provider, pi maintains a list of tool-capable models. Configured provider catalogs refresh automatically; run `pi update --models` to force an immediate refresh. Authenticate via subscription (`/login`) or API key, then select any model from that provider via `/model` (or Ctrl+L).
+Providers are user-configured endpoints (base URL + API key + protocol) stored
+in `~/.pi/agent/models.json`. Add them with `/connect`, optionally importing
+models from the endpoint's `/models` API. Select a model with `/model`
+(or Ctrl+L).
 
-**Subscriptions:**
-- Anthropic Claude Pro/Max
-- OpenAI ChatGPT Plus/Pro (Codex)
-- GitHub Copilot
+Pi supports local llama.cpp servers as ordinary endpoints: run the server, then
+add it with `/connect` (keyless, `openai-completions`, discover models). See
+[docs/llama-cpp.md](docs/llama-cpp.md) for setup.
 
-**API keys:**
-- Anthropic
-- Ant Ling
-- OpenAI
-- Azure OpenAI
-- DeepSeek
-- NVIDIA NIM
-- Google Gemini
-- Google Vertex
-- Amazon Bedrock
-- Mistral
-- Groq
-- Cerebras
-- Cloudflare AI Gateway
-- Cloudflare Workers AI
-- xAI
-- OpenRouter
-- Vercel AI Gateway
-- ZAI Coding Plan (Global)
-- ZAI Coding Plan (China)
-- OpenCode Zen
-- OpenCode Go
-- Hugging Face
-- Fireworks
-- Together AI
-- Baseten
-- Kimi For Coding
-- MiniMax
-- Xiaomi MiMo
-- Xiaomi MiMo Token Plan (China)
-- Xiaomi MiMo Token Plan (Amsterdam)
-- Xiaomi MiMo Token Plan (Singapore)
+See [docs/providers.md](docs/providers.md) for endpoint setup instructions.
 
-Pi also supports the llama.cpp router server. Configure it with `/login llama.cpp`, manage downloads and loaded models with `/llama`, then select a loaded model with `/model`. See [docs/llama-cpp.md](docs/llama-cpp.md) for setup and usage.
-
-See [docs/providers.md](docs/providers.md) for other provider setup instructions.
-
-**Custom providers & models:** Add providers via `~/.pi/agent/models.json` if they speak a supported API (OpenAI, Anthropic, Google). For custom APIs or OAuth, use extensions. See [docs/models.md](docs/models.md) and [docs/custom-provider.md](docs/custom-provider.md).
+**Custom providers & models:** Add endpoints via `/connect` or
+`~/.pi/agent/models.json` if they speak one of the supported APIs (OpenAI
+completions, OpenAI Responses, Anthropic Messages). For custom APIs, use
+extensions. See [docs/models.md](docs/models.md) and
+[docs/custom-provider.md](docs/custom-provider.md).
 
 ---
 
@@ -176,8 +147,7 @@ Type `/` in the editor to trigger commands. [Extensions](#extensions) can regist
 
 | Command | Description |
 |---------|-------------|
-| `/login`, `/logout` | Manage provider credentials |
-| [`/llama`](docs/llama-cpp.md) | Download, load, and unload llama.cpp router models |
+| `/connect` | Add or manage API endpoints |
 | `/model` | Switch models |
 | `/scoped-models` | Enable/disable models for Ctrl+P cycling |
 | `/settings` | Thinking level, theme, message delivery, transport |
