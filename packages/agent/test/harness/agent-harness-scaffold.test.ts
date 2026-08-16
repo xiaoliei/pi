@@ -1,5 +1,4 @@
-import { createModels, type Usage } from "@earendil-works/pi-ai";
-import { getModel } from "@earendil-works/pi-ai/compat";
+import { type Api, createModels, type Model, type Usage } from "@earendil-works/pi-ai";
 import { describe, expect, it } from "vitest";
 import {
 	AgentHarness,
@@ -16,6 +15,21 @@ import {
 } from "../../src/harness/session/index.ts";
 import type { AgentMessage } from "../../src/types.ts";
 
+function testModel(): Model<Api> {
+	return {
+		id: "test-model",
+		name: "Test Model",
+		api: "faux",
+		provider: "faux",
+		baseUrl: "http://localhost:0",
+		reasoning: false,
+		input: ["text"],
+		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+		contextWindow: 128000,
+		maxTokens: 16384,
+	};
+}
+
 function createSession(id = "session"): Session {
 	return new Session(new InMemorySessionStorage({ id, createdAt: 1 }));
 }
@@ -24,7 +38,7 @@ function createHarness(session = createSession()): Promise<AgentHarness> {
 	return AgentHarness.create({
 		session,
 		models: createModels(),
-		model: getModel("google", "gemini-2.5-flash"),
+		model: testModel(),
 	}).then(({ harness }) => harness);
 }
 
@@ -59,7 +73,7 @@ describe("AgentHarness v2 scaffold", () => {
 		const { harness, suspended } = await AgentHarness.create({
 			session,
 			models: createModels(),
-			model: getModel("google", "gemini-2.5-flash"),
+			model: testModel(),
 		});
 
 		expect(suspended).toEqual([]);
@@ -76,14 +90,14 @@ describe("AgentHarness v2 scaffold", () => {
 			AgentHarness.create({
 				session: recorded,
 				models: createModels(),
-				model: getModel("google", "gemini-2.5-flash"),
+				model: testModel(),
 			}),
 		).rejects.toMatchObject({ name: "HarnessNotImplemented", operation: "create.restore" });
 	});
 
 	it("keeps scaffold-safe configuration as defensive copies", async () => {
 		const harness = await createHarness();
-		const model = getModel("anthropic", "claude-sonnet-4-5");
+		const model = testModel();
 		await harness.setModel(model);
 		expect(await harness.getModel()).toBe(model);
 
