@@ -24,7 +24,6 @@ function createSession(options: {
 	branchUsage?: AssistantUsage;
 	compactionUsage?: AssistantUsage;
 	toolUsage?: AssistantUsage;
-	usingSubscription?: boolean;
 }): AgentSession {
 	const usage = options.usage;
 	const entries: Array<Record<string, unknown>> = [];
@@ -79,9 +78,6 @@ function createSession(options: {
 			getCwd: () => "/tmp/project",
 		},
 		getContextUsage: () => ({ contextWindow: 200_000, percent: 12.3 }),
-		modelRuntime: {
-			isUsingSubscription: () => options.usingSubscription ?? false,
-		},
 	};
 
 	return session as unknown as AgentSession;
@@ -207,7 +203,7 @@ describe("FooterComponent width handling", () => {
 		expect(statsLine).toContain("CH25.0%");
 	});
 
-	it("marks Kimi Coding costs as subscription estimates", () => {
+	it("renders Kimi Coding costs without a subscription label", () => {
 		const session = createSession({
 			sessionName: "",
 			provider: "kimi-coding",
@@ -220,15 +216,18 @@ describe("FooterComponent width handling", () => {
 			},
 		});
 		const footer = new FooterComponent(session, createFooterData(1));
+		const stats = stripAnsi(footer.render(120)[1]);
 
-		expect(stripAnsi(footer.render(120)[1])).toContain("$1.234 (sub)");
+		expect(stats).toContain("$1.234");
+		expect(stats).not.toContain("(sub)");
 	});
 
-	it("marks explicitly identified subscription auth", () => {
-		const session = createSession({ sessionName: "", provider: "anthropic", usingSubscription: true });
+	it("does not render a subscription label for subscription-backed auth", () => {
+		const session = createSession({ sessionName: "", provider: "anthropic" });
 		const footer = new FooterComponent(session, createFooterData(1));
+		const stats = stripAnsi(footer.render(120)[1]);
 
-		expect(stripAnsi(footer.render(120)[1])).toContain("$0.000 (sub)");
+		expect(stats).not.toContain("(sub)");
 	});
 
 	it("does not mark generic OAuth sign-in as a subscription", () => {
