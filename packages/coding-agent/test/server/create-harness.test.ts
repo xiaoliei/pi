@@ -10,7 +10,6 @@ import {
 } from "@earendil-works/pi-agent-core";
 import { NodeExecutionEnv } from "@earendil-works/pi-agent-core/node";
 import { createModels } from "@earendil-works/pi-ai";
-import { getModel } from "@earendil-works/pi-ai/compat";
 import { Type } from "typebox";
 import { describe, expect, test, vi } from "vitest";
 import {
@@ -18,6 +17,7 @@ import {
 	type CodingAgentHarnessTool,
 	createCodingAgentHarness,
 } from "../../src/server/create-harness.ts";
+import { testModel } from "../utilities.ts";
 
 class CapturingExecutionEnv extends NodeExecutionEnv {
 	executionOverrides: Record<string, string> | undefined;
@@ -65,7 +65,7 @@ describe("coding-agent Harness construction", () => {
 		const created = await createCodingAgentHarness({
 			session,
 			models: createModels(),
-			model: getModel("google", "gemini-2.5-flash"),
+			model: testModel(),
 			thinkingLevel: "high",
 			env,
 			streamOptions: { maxTokens: 123 },
@@ -115,7 +115,7 @@ describe("coding-agent Harness construction", () => {
 		const created = await createCodingAgentHarness({
 			session,
 			models: createModels(),
-			model: getModel("google", "gemini-2.5-flash"),
+			model: testModel(),
 			env,
 			tools: [customTool],
 			activeToolNames: [],
@@ -139,7 +139,7 @@ describe("coding-agent Harness construction", () => {
 		const created = await createCodingAgentHarness({
 			session,
 			models: createModels(),
-			model: getModel("google", "gemini-2.5-flash"),
+			model: testModel(),
 			thinkingLevel: "high",
 			env,
 			sessionFile: "/sessions/current.jsonl",
@@ -180,12 +180,12 @@ describe("coding-agent Harness construction", () => {
 		const created = await createCodingAgentHarness({
 			session,
 			models: createModels(),
-			model: getModel("google", "gemini-2.5-flash"),
+			model: testModel(),
 			thinkingLevel: "high",
 			env,
 		});
 		try {
-			await created.harness.setModel(getModel("anthropic", "claude-sonnet-4-5"));
+			await created.harness.setModel(testModel());
 			await created.harness.setThinkingLevel("low");
 			const bash = (await created.harness.getTools()).find((tool) => tool.name === "bash");
 			if (!bash) throw new Error("Expected the default bash tool");
@@ -228,7 +228,7 @@ describe("coding-agent Harness construction", () => {
 			const created = await createCodingAgentHarness({
 				session,
 				models: createModels(),
-				model: getModel("google", "gemini-2.5-flash"),
+				model: testModel(),
 				env,
 			});
 			createSpy.mockRestore();

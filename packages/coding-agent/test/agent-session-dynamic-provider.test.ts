@@ -1,8 +1,7 @@
-import { existsSync, mkdirSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Provider } from "@earendil-works/pi-ai";
-import { getModel } from "@earendil-works/pi-ai/compat";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AuthStorage } from "../src/core/auth-storage.ts";
 import { ModelRuntime } from "../src/core/model-runtime.ts";
@@ -11,9 +10,10 @@ import type { ExtensionFactory } from "../src/core/sdk.ts";
 import { createAgentSession } from "../src/core/sdk.ts";
 import { SessionManager } from "../src/core/session-manager.ts";
 import { SettingsManager } from "../src/core/settings-manager.ts";
+import { testModel } from "./utilities.ts";
 
 function nativeAnthropicProvider(baseUrl: string): Provider {
-	const model = { ...getModel("anthropic", "claude-sonnet-4-5")!, baseUrl };
+	const model = { ...testModel(), baseUrl };
 	return {
 		id: "anthropic",
 		name: "Native Anthropic",
@@ -50,15 +50,51 @@ describe("AgentSession dynamic provider registration", () => {
 		}
 	});
 
-	async function createSession(extensionFactories: ExtensionFactory[]) {
+	async function createSession(
+		extensionFactories: ExtensionFactory[],
+		options: { seedAnthropic?: boolean } = { seedAnthropic: true },
+	) {
 		const settingsManager = SettingsManager.create(tempDir, agentDir);
 		const sessionManager = SessionManager.inMemory();
 		const authStorage = AuthStorage.create(join(agentDir, "auth.json"));
 		await authStorage.modify("anthropic", async () => ({ type: "api_key", key: "test-key" }));
+		const modelsPath = join(agentDir, "models.json");
+		if (options.seedAnthropic) {
+			const seedModel = testModel();
+			writeFileSync(
+				modelsPath,
+				JSON.stringify({
+					providers: {
+						anthropic: {
+							name: "Anthropic",
+							baseUrl: "https://api.anthropic.com/v1",
+							api: seedModel.api,
+							models: [
+								{
+									id: seedModel.id,
+									name: seedModel.name,
+									api: seedModel.api,
+									reasoning: seedModel.reasoning,
+									input: seedModel.input,
+									cost: seedModel.cost,
+									contextWindow: seedModel.contextWindow,
+									maxTokens: seedModel.maxTokens,
+								},
+							],
+						},
+					},
+				}),
+				"utf-8",
+			);
+		}
 		const modelRuntime = await ModelRuntime.create({
 			credentials: authStorage,
-			modelsPath: join(agentDir, "models.json"),
+			modelsPath,
 		});
+		if (!options.seedAnthropic) {
+			modelRuntime.registerNativeProvider(nativeAnthropicProvider("https://api.anthropic.com/v1"));
+			await modelRuntime.refresh({ allowNetwork: false, providers: ["anthropic"] });
+		}
 		const resourceLoader = new DefaultResourceLoader({
 			cwd: tempDir,
 			agentDir,
@@ -70,7 +106,7 @@ describe("AgentSession dynamic provider registration", () => {
 		const { session } = await createAgentSession({
 			cwd: tempDir,
 			agentDir,
-			model: getModel("anthropic", "claude-sonnet-4-5")!,
+			model: modelRuntime.getModel("anthropic", "test-model")!,
 			settingsManager,
 			sessionManager,
 			modelRuntime,
@@ -123,11 +159,14 @@ describe("AgentSession dynamic provider registration", () => {
 	});
 
 	it("registers native pi-ai providers during extension loading", async () => {
-		const session = await createSession([
-			(pi) => {
-				pi.registerProvider(nativeAnthropicProvider("http://localhost:8080/native-top-level"));
-			},
-		]);
+		const session = await createSession(
+			[
+				(pi) => {
+					pi.registerProvider(nativeAnthropicProvider("http://localhost:8080/native-top-level"));
+				},
+			],
+			{ seedAnthropic: false },
+		);
 
 		expect(session.model?.baseUrl).toBe("http://localhost:8080/native-top-level");
 		expect(await capturePromptBaseUrl(session)).toBe("http://localhost:8080/native-top-level");
@@ -157,16 +196,19 @@ describe("AgentSession dynamic provider registration", () => {
 	});
 
 	it("registers native pi-ai providers at command time", async () => {
-		const session = await createSession([
-			(pi) => {
-				pi.registerCommand("use-native", {
-					description: "Use native provider",
-					handler: async () => {
-						pi.registerProvider(nativeAnthropicProvider("http://localhost:8080/native-command"));
-					},
-				});
-			},
-		]);
+		const session = await createSession(
+			[
+				(pi) => {
+					pi.registerCommand("use-native", {
+						description: "Use native provider",
+						handler: async () => {
+							pi.registerProvider(nativeAnthropicProvider("http://localhost:8080/native-command"));
+						},
+					});
+				},
+			],
+			{ seedAnthropic: false },
+		);
 
 		await session.bindExtensions({});
 		await session.prompt("/use-native");

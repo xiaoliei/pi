@@ -35,7 +35,6 @@ describe("extension provider model lifecycle", () => {
 			credentials: AuthStorage.inMemory(),
 			modelsStore: new InMemoryModelsStore(),
 			modelsPath: null,
-			allowModelNetwork: false,
 		});
 		const nativeModel = {
 			...model("native"),
@@ -48,10 +47,6 @@ describe("extension provider model lifecycle", () => {
 			auth: {
 				apiKey: {
 					name: "Native setup",
-					login: async (interaction) => ({
-						type: "api_key",
-						key: await interaction.prompt({ type: "secret", message: "API key" }),
-					}),
 					check: async ({ credential }) =>
 						credential?.key ? { type: "api_key", source: "stored native key" } : undefined,
 					resolve: async ({ credential }) =>
@@ -79,10 +74,7 @@ describe("extension provider model lifecycle", () => {
 		expect(registry.getRegisteredProviderIds()).toContain("extension-native");
 		expect(registry.find("extension-native", "native")).toBeDefined();
 
-		await runtime.login("extension-native", "api_key", {
-			prompt: async () => "secret",
-			notify: () => {},
-		});
+		await runtime.setRuntimeApiKey("extension-native", "secret");
 		expect(await registry.getProviderAuth("extension-native")).toMatchObject({
 			auth: { apiKey: "secret", baseUrl: "https://resolved.test/v1" },
 		});
@@ -107,7 +99,6 @@ describe("extension provider model lifecycle", () => {
 				credentials: AuthStorage.inMemory(),
 				modelsStore: new InMemoryModelsStore(),
 				modelsPath,
-				allowModelNetwork: false,
 			});
 			const nativeModel = {
 				...model("native-deferred"),
@@ -235,7 +226,6 @@ describe("extension provider model lifecycle", () => {
 				credentials: AuthStorage.inMemory(),
 				modelsStore: new InMemoryModelsStore(),
 				modelsPath,
-				allowModelNetwork: false,
 			});
 			const nativeModel = {
 				...model("native"),
@@ -272,7 +262,6 @@ describe("extension provider model lifecycle", () => {
 			credentials: AuthStorage.inMemory(),
 			modelsStore,
 			modelsPath: null,
-			allowModelNetwork: false,
 		});
 		runtime.registerProvider("extension-dynamic", {
 			baseUrl: "http://localhost:8080/v1",
@@ -290,43 +279,5 @@ describe("extension provider model lifecycle", () => {
 		await runtime.refresh({ allowNetwork: false });
 		expect(runtime.getModel("extension-dynamic", "live")).toBeDefined();
 		expect(await modelsStore.read("extension-dynamic")).toBeUndefined();
-	});
-
-	it("applies legacy OAuth modifyModels after async credential initialization", async () => {
-		const runtime = await ModelRuntime.create({
-			credentials: AuthStorage.inMemory({
-				"extension-oauth": {
-					type: "oauth",
-					access: "access",
-					refresh: "refresh",
-					expires: Date.now() + 60_000,
-				},
-			}),
-			modelsStore: new InMemoryModelsStore(),
-			modelsPath: null,
-			allowModelNetwork: false,
-		});
-		runtime.registerProvider("extension-oauth", {
-			baseUrl: "https://example.test/v1",
-			api: "openai-completions",
-			models: [model("base")],
-			oauth: {
-				name: "Extension OAuth",
-				login: async () => {
-					throw new Error("not used");
-				},
-				refreshToken: async (credential) => credential,
-				getApiKey: (credential) => credential.access,
-				modifyModels: (models, credential) =>
-					credential.access === "access" ? [...models, model("credential-model")] : models,
-			},
-		});
-
-		await runtime.refresh({ allowNetwork: false });
-		expect(runtime.getModel("extension-oauth", "base")).toBeDefined();
-		expect(runtime.getModel("extension-oauth", "credential-model")).toBeDefined();
-
-		await runtime.logout("extension-oauth");
-		expect(runtime.getModel("extension-oauth", "credential-model")).toBeUndefined();
 	});
 });

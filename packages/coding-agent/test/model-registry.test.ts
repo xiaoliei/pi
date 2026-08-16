@@ -1,14 +1,8 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type {
-	AnthropicMessagesCompat,
-	Api,
-	Context,
-	Model,
-	OpenAICompletionsCompat,
-} from "@earendil-works/pi-ai/compat";
-import { getApiProvider, getSupportedThinkingLevels } from "@earendil-works/pi-ai/compat";
+import type { AnthropicMessagesCompat, Api, Context, Model, OpenAICompletionsCompat } from "@earendil-works/pi-ai";
+import { getApiProvider, getSupportedThinkingLevels } from "@earendil-works/pi-ai";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { AuthStorage } from "../src/core/auth-storage.ts";
 import { clearApiKeyCache, type ModelRegistry, type ProviderConfigInput } from "../src/core/model-registry.ts";
@@ -997,12 +991,6 @@ describe("ModelRegistry", () => {
 			registry.registerProvider("oauth-provider", {
 				baseUrl: "https://provider.test/v1",
 				api: "openai-completions",
-				oauth: {
-					name: "OAuth Provider",
-					login: async () => ({ access: "access", refresh: "refresh", expires: Date.now() + 60_000 }),
-					refreshToken: async (credentials) => credentials,
-					getApiKey: (credentials) => credentials.access,
-				},
 				models: [
 					{
 						id: "demo-model",
@@ -1015,7 +1003,7 @@ describe("ModelRegistry", () => {
 					},
 				],
 			});
-			expect(registry.getProviderDisplayName("oauth-provider")).toBe("OAuth Provider");
+			expect(registry.getProviderDisplayName("oauth-provider")).toBe("oauth-provider");
 		});
 
 		test("modelOverrides apply to dynamically registered provider models", async () => {
@@ -1072,44 +1060,6 @@ describe("ModelRegistry", () => {
 			expect(await registry.getApiKeyAndHeaders(model)).toMatchObject({
 				ok: true,
 				headers: { "x-model-override": "enabled" },
-			});
-		});
-
-		test("stored API key env propagates to request auth and resolves headers", async () => {
-			await authStorage.modify("cloudflare-ai-gateway", async () => ({
-				type: "api_key",
-				key: "$CLOUDFLARE_API_KEY",
-				env: {
-					CLOUDFLARE_API_KEY: "stored-cf-token",
-					CLOUDFLARE_ACCOUNT_ID: "stored-account",
-					CLOUDFLARE_GATEWAY_ID: "stored-gateway",
-				},
-			}));
-			writeRawModelsJson({
-				"cloudflare-ai-gateway": {
-					headers: { "x-account": "$CLOUDFLARE_ACCOUNT_ID" },
-				},
-			});
-
-			const registry = await createModelRegistry(authStorage, modelsJsonPath);
-			const model = registry.getAll().find((m) => m.provider === "cloudflare-ai-gateway");
-			expect(model).toBeDefined();
-
-			const auth = await registry.getApiKeyAndHeaders(model!);
-
-			expect(auth).toEqual({
-				ok: true,
-				apiKey: undefined,
-				headers: {
-					"cf-aig-authorization": "Bearer stored-cf-token",
-					Authorization: null,
-					"x-api-key": null,
-					"x-account": "stored-account",
-				},
-				env: {
-					CLOUDFLARE_ACCOUNT_ID: "stored-account",
-					CLOUDFLARE_GATEWAY_ID: "stored-gateway",
-				},
 			});
 		});
 
@@ -1225,23 +1175,14 @@ describe("ModelRegistry", () => {
 			expect(registry.find("demo-provider", "demo-model")).toBeDefined();
 		});
 
-		test("unregisterProvider removes the runtime OAuth overlay without mutating global state", async () => {
+		test("unregisterProvider removes a runtime provider overlay without mutating global state", async () => {
 			const registry = await createModelRegistry(authStorage, modelsJsonPath);
 
 			registry.registerProvider("anthropic", {
-				oauth: {
-					name: "Custom Anthropic OAuth",
-					login: async () => ({
-						access: "custom-access-token",
-						refresh: "custom-refresh-token",
-						expires: Date.now() + 60_000,
-					}),
-					refreshToken: async (credentials) => credentials,
-					getApiKey: (credentials) => credentials.access,
-				},
+				apiKey: "$CUSTOM_ANTHROPIC_KEY",
 			});
 
-			expect(registry.getRegisteredProviderConfig("anthropic")?.oauth?.name).toBe("Custom Anthropic OAuth");
+			expect(registry.getRegisteredProviderConfig("anthropic")?.apiKey).toBe("$CUSTOM_ANTHROPIC_KEY");
 
 			registry.unregisterProvider("anthropic");
 
@@ -1855,25 +1796,6 @@ describe("ModelRegistry", () => {
 				expect(available.some((m) => m.provider === "custom-provider")).toBe(true);
 				const count = parseInt(readFileSync(counterFile, "utf-8").trim(), 10);
 				expect(count).toBe(0);
-			});
-
-			test("getAvailable filters GitHub Copilot OAuth models to account picker availability", async () => {
-				await authStorage.modify("github-copilot", async () => ({
-					type: "oauth",
-					refresh: "github-access-token",
-					access: "tid=test;exp=9999999999;proxy-ep=proxy.individual.githubcopilot.com;",
-					expires: Date.now() + 60_000,
-					availableModelIds: ["gpt-4.1"],
-				}));
-
-				const registry = await createModelRegistry(authStorage, modelsJsonPath);
-
-				expect(
-					registry
-						.getAvailable()
-						.filter((m) => m.provider === "github-copilot")
-						.map((m) => m.id),
-				).toEqual(["gpt-4.1"]);
 			});
 
 			test("getApiKeyAndHeaders resolves authHeader on every request", async () => {

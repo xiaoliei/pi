@@ -1,7 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { type CredentialStore, createModels, type Provider } from "@earendil-works/pi-ai";
 import lockfile from "proper-lockfile";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { AuthStorage, FileAuthStorageBackend } from "../src/core/auth-storage.ts";
@@ -41,17 +40,6 @@ describe("AuthStorage", () => {
 		writeAuthJson({ anthropic: { type: "api_key", key: "!printf 'command-key'" } });
 		const storage = AuthStorage.create(authJsonPath);
 		expect(await storage.read("anthropic")).toEqual({ type: "api_key", key: "command-key" });
-	});
-
-	test("returns OAuth credentials unchanged", async () => {
-		const credential = {
-			type: "oauth" as const,
-			access: "access-token",
-			refresh: "refresh-token",
-			expires: Date.now() + 60_000,
-		};
-		const storage = AuthStorage.inMemory({ anthropic: credential });
-		expect(await storage.read("anthropic")).toEqual(credential);
 	});
 
 	test("credential-scoped env takes precedence and remains inspectable", async () => {
@@ -427,102 +415,6 @@ describe("AuthStorage", () => {
 		await new Promise((resolve) => setTimeout(resolve, 0));
 		expect(secondMutation).not.toHaveBeenCalled();
 		expect(await storage.read("openai")).toBeUndefined();
-	});
-
-	test("preserves the stored credential after cancelling an active refresh mutation", async () => {
-		const previous = {
-			type: "oauth" as const,
-			access: "expired",
-			refresh: "refresh-token",
-			expires: 0,
-		};
-		const storage = AuthStorage.inMemory({ oauth: previous });
-		const controller = new AbortController();
-		let markStarted: (() => void) | undefined;
-		let finish: (() => void) | undefined;
-		const started = new Promise<void>((resolve) => {
-			markStarted = resolve;
-		});
-		const blocked = new Promise<void>((resolve) => {
-			finish = resolve;
-		});
-		const pending = storage.modify(
-			"oauth",
-			async () => {
-				markStarted?.();
-				await blocked;
-				return { ...previous, access: "refreshed", expires: Date.now() + 60_000 };
-			},
-			{ signal: controller.signal },
-		);
-
-		await started;
-		controller.abort();
-		await expect(pending).rejects.toMatchObject({ name: "AbortError" });
-		const competingMutation = vi.fn(async () => ({ type: "api_key" as const, key: "other" }));
-		const competing = storage.modify("other", competingMutation);
-		await new Promise((resolve) => setTimeout(resolve, 0));
-		expect(competingMutation).not.toHaveBeenCalled();
-
-		finish?.();
-		await competing;
-		expect(competingMutation).toHaveBeenCalledTimes(1);
-		expect(await storage.read("oauth")).toEqual(previous);
-	});
-
-	test("translates a credential-store refresh failure and allows a later retry", async () => {
-		const providerId = "oauth-provider";
-		const base = AuthStorage.inMemory({
-			[providerId]: {
-				type: "oauth",
-				access: "expired-access",
-				refresh: "refresh-token",
-				expires: 0,
-			},
-		});
-		let failNextModify = true;
-		const credentials: CredentialStore = {
-			read: (id) => base.read(id),
-			list: () => base.list(),
-			modify: (id, fn) => {
-				if (failNextModify) {
-					failNextModify = false;
-					return Promise.reject(new Error("credential store unavailable"));
-				}
-				return base.modify(id, fn);
-			},
-			delete: (id) => base.delete(id),
-		};
-		const provider: Provider = {
-			id: providerId,
-			name: "OAuth Provider",
-			auth: {
-				oauth: {
-					name: "OAuth",
-					login: async () => {
-						throw new Error("not used");
-					},
-					refresh: async (credential) => ({
-						...credential,
-						access: "refreshed-access",
-						expires: Date.now() + 60_000,
-					}),
-					toAuth: async (credential) => ({ apiKey: credential.access }),
-				},
-			},
-			getModels: () => [],
-			stream: () => {
-				throw new Error("not used");
-			},
-			streamSimple: () => {
-				throw new Error("not used");
-			},
-		};
-		const models = createModels({ credentials });
-		models.setProvider(provider);
-
-		await expect(models.getAuth(providerId)).rejects.toMatchObject({ code: "auth" });
-		await expect(models.getAuth(providerId)).resolves.toMatchObject({ auth: { apiKey: "refreshed-access" } });
 	});
 
 	test("does not overwrite malformed auth files", async () => {

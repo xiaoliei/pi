@@ -76,18 +76,12 @@ describe("issue #6768 Copilot compaction base URL", () => {
 				apiKey: {
 					name: "Copilot token",
 					resolve: async ({ credential }) =>
-						credential?.key ? { auth: { apiKey: credential.key }, source: "explicit token" } : undefined,
-				},
-				oauth: {
-					name: "Copilot OAuth",
-					login: async () => {
-						throw new Error("unused");
-					},
-					refresh: async (credential) => credential,
-					toAuth: async (credential) => ({
-						apiKey: credential.access,
-						baseUrl: ENTERPRISE_BASE_URL,
-					}),
+						credential?.key
+							? {
+									auth: { apiKey: credential.key, baseUrl: ENTERPRISE_BASE_URL },
+									source: "explicit token",
+								}
+							: undefined,
 				},
 			},
 			getModels: () => [catalogModel],
@@ -96,10 +90,8 @@ describe("issue #6768 Copilot compaction base URL", () => {
 		};
 
 		await harness.authStorage.modify(catalogModel.provider, async () => ({
-			type: "oauth",
-			access: "enterprise-token",
-			refresh: "refresh-token",
-			expires: Date.now() + 60 * 60_000,
+			type: "api_key",
+			key: "enterprise-token",
 		}));
 		const modelRuntime = harness.session.modelRuntime;
 		modelRuntime.registerNativeProvider(provider);

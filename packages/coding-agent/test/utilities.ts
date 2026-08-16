@@ -1,15 +1,16 @@
-import { createModelRegistry, getModelRuntime } from "./model-runtime-test-utils.ts";
+import { createModelRegistry, getModelRuntime, testModel } from "./model-runtime-test-utils.ts";
+
+export { testModel } from "./model-runtime-test-utils.ts";
+
 /**
  * Shared test utilities for coding-agent tests.
  */
 
-import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { Agent } from "@earendil-works/pi-agent-core";
-import type { OAuthCredentials } from "@earendil-works/pi-ai";
-import { getModel, streamSimple } from "@earendil-works/pi-ai/compat";
-import { builtinProviders } from "@earendil-works/pi-ai/providers/all";
+import { streamSimple } from "@earendil-works/pi-ai";
 import { AgentSession } from "../src/core/agent-session.ts";
 import { AuthStorage } from "../src/core/auth-storage.ts";
 import { createEventBus } from "../src/core/event-bus.ts";
@@ -29,10 +30,10 @@ import { createCodingTools } from "../src/index.ts";
  * API key for authenticated tests. Tests using this should be wrapped in
  * describe.skipIf(!API_KEY)
  */
-export const API_KEY = process.env.ANTHROPIC_OAUTH_TOKEN || process.env.ANTHROPIC_API_KEY;
+export const API_KEY = process.env.ANTHROPIC_API_KEY;
 
 // ============================================================================
-// OAuth API key resolution from ~/.pi/agent/auth.json
+// API key resolution from ~/.pi/agent/auth.json
 // ============================================================================
 
 const AUTH_PATH = join(homedir(), ".pi", "agent", "auth.json");
@@ -42,11 +43,7 @@ type ApiKeyCredential = {
 	key: string;
 };
 
-type OAuthCredentialEntry = {
-	type: "oauth";
-} & OAuthCredentials;
-
-type AuthCredential = ApiKeyCredential | OAuthCredentialEntry;
+type AuthCredential = ApiKeyCredential;
 
 type AuthStorageData = Record<string, AuthCredential>;
 
@@ -62,45 +59,16 @@ function loadAuthStorage(): AuthStorageData {
 	}
 }
 
-function saveAuthStorage(storage: AuthStorageData): void {
-	const configDir = dirname(AUTH_PATH);
-	if (!existsSync(configDir)) {
-		mkdirSync(configDir, { recursive: true, mode: 0o700 });
-	}
-	writeFileSync(AUTH_PATH, JSON.stringify(storage, null, 2), "utf-8");
-	chmodSync(AUTH_PATH, 0o600);
-}
-
 /**
  * Resolve API key for a provider from ~/.pi/agent/auth.json
  *
- * For API key credentials, returns the key directly.
- * For OAuth credentials, returns the access token (refreshing if expired and saving back).
- *
+ * Returns the stored API key directly.
  */
 export async function resolveApiKey(provider: string): Promise<string | undefined> {
 	const storage = loadAuthStorage();
 	const entry = storage[provider];
-
 	if (!entry) return undefined;
-
-	if (entry.type === "api_key") {
-		return entry.key;
-	}
-
-	if (entry.type === "oauth") {
-		const oauth = builtinProviders().find((candidate) => candidate.id === provider)?.auth.oauth;
-		if (!oauth) return undefined;
-		let credential = entry;
-		if (Date.now() >= credential.expires) {
-			credential = await oauth.refresh(credential, new AbortController().signal);
-			storage[provider] = credential;
-			saveAuthStorage(storage);
-		}
-		return (await oauth.toAuth(credential)).apiKey;
-	}
-
-	return undefined;
+	return entry.key;
 }
 
 /**
@@ -240,7 +208,7 @@ export async function createTestSession(options: TestSessionOptions = {}): Promi
 	const tempDir = join(tmpdir(), `pi-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
 	mkdirSync(tempDir, { recursive: true });
 
-	const model = getModel("anthropic", "claude-sonnet-4-5")!;
+	const model = testModel();
 	const agent = new Agent({
 		getApiKey: () => API_KEY,
 		initialState: {
@@ -248,7 +216,7 @@ export async function createTestSession(options: TestSessionOptions = {}): Promi
 			systemPrompt: options.systemPrompt ?? "You are a helpful assistant. Be extremely concise.",
 			tools: createCodingTools(process.cwd()),
 		},
-		streamFn: streamSimple,
+		streamFn: (m, c, o) => streamSimple(m, c, o),
 	});
 
 	const sessionManager = options.inMemory ? SessionManager.inMemory() : SessionManager.create(tempDir);
