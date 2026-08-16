@@ -24,7 +24,7 @@
 - Always ask before removing functionality or code that appears intentional.
 - Do not preserve backward compatibility unless the user asks for it.
 - Never hardcode key checks (e.g. `matchesKey(keyData, "ctrl+x")`). Add defaults to `DEFAULT_EDITOR_KEYBINDINGS` or `DEFAULT_APP_KEYBINDINGS` so they stay configurable.
-- Never modify `packages/ai/src/models.generated.ts` directly; update `packages/ai/scripts/generate-models.ts` instead, then regenerate. Including the resulting `models.generated.ts` diff is always OK, even if regeneration includes unrelated upstream model metadata changes.
+- Endpoints are user-configured in `<agentDir>/models.json` (via `/connect` in the TUI or hand edits). `packages/ai` has no generated provider catalog: do not add provider model shards or restore the model-data pipeline (`generate-models.ts`, `providers/data`, `models.generated.ts`).
 
 ## Commands
 

@@ -11,8 +11,8 @@
 #
 # Setup required before this works:
 #   1. Create a `pi-analyze` GitHub environment on the repo and add a
-#      `PI_AUTH_JSON` secret containing the contents of a pi auth.json
-#      (~/.pi/agent/auth.json).
+#      `PI_MODELS_JSON` secret containing the contents of a pi models.json
+#      (~/.pi/agent/models.json) with the analysis endpoint configured.
 #   2. Create the `pi-analyze` label.
 #   3. Add a repository secret `EARENDIL_ORG_READ_TOKEN` with permission to
 #      read `earendil-works` org membership. The authorization job uses it to
@@ -20,21 +20,9 @@
 #   4. Add an environment secret `PI_GIST_TOKEN` on `pi-analyze` with gist
 #      creation permission. The analysis job uses it to upload the exported
 #      session gist.
-#   5. Add an environment secret `PI_AUTH_UPDATE_TOKEN` on `pi-analyze` with
-#      permission to update this repo's environment secrets. The analysis job
-#      uses it to write back refreshed `PI_AUTH_JSON` contents. Fine-grained
-#      tokens need repository permission `Environments: read and write` on this
-#      repo; classic tokens need the `repo` scope. The `Secrets` permission is
-#      not enough: it only covers repository-level Actions secrets, while every
-#      `/repos/{owner}/{repo}/environments/{env}/secrets/*` endpoint is governed
-#      by `Environments`. Without it `gh secret set` fails with "Resource not
-#      accessible by personal access token" and the stored credential goes stale
-#      until its refresh token is rejected.
-#
-# `PI_AUTH_JSON` must come from a login dedicated to this workflow. OpenAI Codex
-# rotates refresh tokens on every refresh, so sharing one auth.json with a
-# developer machine invalidates whichever copy refreshes second, and analysis
-# then fails with "OAuth refresh failed for openai-codex".
+#   5. Configure the analysis endpoint in `PI_MODELS_JSON` (an OpenAI-compatible
+#      endpoint with an API key). Endpoint keys are static in models.json, so no
+#      credential refresh is needed.
 #
 # The selected runner must have Node.js support plus gh, fd, and ripgrep. GitHub
 # hosted runners are bootstrapped below; future self-hosted aliases should have
@@ -261,7 +249,7 @@ jobs:
       group: issue-analysis-pi-auth
       cancel-in-progress: false
     env:
-      ISSUE_ANALYSIS_MODEL: openai-codex/gpt-5.5
+      ISSUE_ANALYSIS_MODEL: analysis/gpt-5.5
       ISSUE_ANALYSIS_THINKING: high
     steps:
       - name: Create high-entropy working directory name
@@ -329,28 +317,25 @@ jobs:
         working-directory: ${{ steps.workdir.outputs.name }}
         run: npm run build
 
-      - name: Write auth.json
+      - name: Write models.json
         id: write_auth
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
-          PI_AUTH_JSON: ${{ secrets.PI_AUTH_JSON }}
+          PI_MODELS_JSON: ${{ secrets.PI_MODELS_JSON }}
         with:
           script: |
             const fs = require('fs');
             const path = require('path');
 
-            const authJson = process.env.PI_AUTH_JSON;
-            if (!authJson) {
-              throw new Error('PI_AUTH_JSON secret is not configured for the pi-analyze environment');
+            const modelsJson = process.env.PI_MODELS_JSON;
+            if (!modelsJson) {
+              throw new Error('PI_MODELS_JSON secret is not configured for the pi-analyze environment');
             }
 
             const agentDir = path.join(process.env.RUNNER_TEMP, 'pi-agent');
             fs.mkdirSync(agentDir, { recursive: true });
-            const authPath = path.join(agentDir, 'auth.json');
-            fs.writeFileSync(authPath, authJson, { mode: 0o600 });
-            if (process.platform !== 'win32') {
-              fs.chmodSync(authPath, 0o600);
-            }
+            const modelsPath = path.join(agentDir, 'models.json');
+            fs.writeFileSync(modelsPath, modelsJson);
 
       - name: Run pi /is
         id: run_pi
@@ -414,75 +399,6 @@ jobs:
             if (exitCode !== 0) {
               throw new Error(`pi /is failed with exit code ${exitCode}`);
             }
-
-      - name: Persist refreshed auth.json
-        if: always() && steps.write_auth.outcome == 'success'
-        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
-        env:
-          GH_TOKEN: ${{ secrets.PI_AUTH_UPDATE_TOKEN }}
-          PI_AUTH_JSON: ${{ secrets.PI_AUTH_JSON }}
-          PI_CODING_AGENT_DIR: ${{ runner.temp }}/pi-agent
-        with:
-          script: |
-            const fs = require('fs');
-            const path = require('path');
-            const { spawn } = require('child_process');
-
-            if (!process.env.GH_TOKEN) {
-              throw new Error('PI_AUTH_UPDATE_TOKEN is not configured for the pi-analyze environment');
-            }
-
-            const authPath = path.join(process.env.PI_CODING_AGENT_DIR, 'auth.json');
-            if (!fs.existsSync(authPath)) {
-              core.warning('auth.json was not created; skipping auth persistence');
-              return;
-            }
-
-            const authJson = fs.readFileSync(authPath, 'utf8');
-            let parsed;
-            try {
-              parsed = JSON.parse(authJson);
-            } catch (error) {
-              throw new Error(`Refusing to persist malformed auth.json: ${error instanceof Error ? error.message : String(error)}`);
-            }
-
-            const codexAuth = parsed['openai-codex'];
-            if (codexAuth?.type !== 'oauth' || typeof codexAuth.refresh !== 'string' || codexAuth.refresh.length === 0) {
-              throw new Error('Refusing to persist auth.json without openai-codex OAuth refresh credentials');
-            }
-
-            if (authJson === process.env.PI_AUTH_JSON) {
-              console.log('auth.json is unchanged; skipping secret update');
-              return;
-            }
-
-            await new Promise((resolve, reject) => {
-              const child = spawn(
-                'gh',
-                ['secret', 'set', 'PI_AUTH_JSON', '--env', 'pi-analyze', '--repo', process.env.GITHUB_REPOSITORY],
-                { env: process.env, stdio: ['pipe', 'inherit', 'pipe'] },
-              );
-              const stderrChunks = [];
-              child.stderr.on('data', (chunk) => {
-                stderrChunks.push(chunk);
-                process.stderr.write(chunk);
-              });
-              child.on('error', reject);
-              child.on('close', (code) => {
-                if (code === 0) {
-                  resolve();
-                  return;
-                }
-                const details = Buffer.concat(stderrChunks).toString().trim();
-                reject(
-                  new Error(
-                    `gh secret set failed with exit code ${code}${details ? `: ${details}` : ''}. ` +
-                      'PI_AUTH_UPDATE_TOKEN needs repository permission "Environments: read and write" on this repo.',
-                  ),
-                );
-              });
-              child.stdin.end(authJson);
-            });
 
       - name: Export session files
         id: export_session_files

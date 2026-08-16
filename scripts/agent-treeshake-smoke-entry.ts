@@ -1,11 +1,31 @@
 import { Agent } from "@earendil-works/pi-agent-core";
-import { createModels } from "@earendil-works/pi-ai";
-import { anthropicProvider } from "@earendil-works/pi-ai/providers/anthropic";
+import { createModels, endpointProvider } from "@earendil-works/pi-ai";
 
 const models = createModels();
-models.setProvider(anthropicProvider());
-const model = models.getModel("anthropic", "claude-sonnet-4-5");
-if (!model) throw new Error("Anthropic smoke-test model not found");
+models.setProvider(
+	endpointProvider({
+		id: "smoke",
+		name: "Smoke",
+		baseUrl: "https://example.test/v1",
+		api: "openai-completions",
+		models: [
+			{
+				id: "test",
+				name: "Test",
+				api: "openai-completions",
+				provider: "smoke",
+				baseUrl: "https://example.test/v1",
+				reasoning: false,
+				input: ["text"],
+				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+				contextWindow: 128000,
+				maxTokens: 16384,
+			},
+		],
+	}),
+);
+const model = models.getModel("smoke", "test");
+if (!model) throw new Error("Smoke-test model not found");
 
 export const agent = new Agent({
 	initialState: { model },

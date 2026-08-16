@@ -1,6 +1,11 @@
 import { PiClient } from "@earendil-works/pi-client";
-import { createAssistantMessageEventStream, Type } from "@earendil-works/pi-ai";
-import { complete, getModel, getProviders, streamSimple } from "@earendil-works/pi-ai/compat";
+import {
+	createAssistantMessageEventStream,
+	endpointProvider,
+	getApiProviders,
+	streamSimple,
+	Type,
+} from "@earendil-works/pi-ai";
 import {
 	Agent,
 	bashExecutionToText,
@@ -22,7 +27,26 @@ import { decodeCbor, encodeCbor, PROTOCOL_VERSION } from "@earendil-works/pi-pro
 
 // Keep this entry browser-safe. It is bundled by scripts/check-browser-smoke.mjs
 // to catch accidental Node-only runtime imports in browser-facing package exports.
-const model = getModel("google", "gemini-2.5-flash");
+const model = endpointProvider({
+	id: "smoke",
+	name: "Smoke",
+	baseUrl: "https://example.test/v1",
+	api: "openai-completions",
+	models: [
+		{
+			id: "test",
+			name: "Test",
+			api: "openai-completions",
+			provider: "smoke",
+			baseUrl: "https://example.test/v1",
+			reasoning: false,
+			input: ["text"],
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+			contextWindow: 128000,
+			maxTokens: 16384,
+		},
+	],
+}).getModels()[0]!;
 const schema = Type.Object({ prompt: Type.String() });
 const stream = createAssistantMessageEventStream();
 
@@ -36,8 +60,7 @@ const skill = { name: "browser-safe", description: "Smoke test", content: "Use b
 
 console.log(
 	model.id,
-	getProviders().length,
-	typeof complete,
+	getApiProviders().length,
 	schema.type,
 	typeof stream.push,
 	agent.hasQueuedMessages(),
