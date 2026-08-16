@@ -1,8 +1,8 @@
 import { Type } from "typebox";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { stream as streamOpenAICompletions } from "../src/api/openai-completions.ts";
-import { getModel } from "../src/compat.ts";
 import type { Message, Model } from "../src/types.ts";
+import { openAICompletionsModel } from "./fixtures.ts";
 
 interface CacheControl {
 	type: "ephemeral";
@@ -154,13 +154,17 @@ describe("openai-completions cacheControlFormat", () => {
 	});
 
 	it("preserves Anthropic-style cache markers for OpenRouter Anthropic models", async () => {
-		const model = getModel("openrouter", "anthropic/claude-sonnet-4");
+		const model = openAICompletionsModel("anthropic/claude-sonnet-4", {
+			compat: { cacheControlFormat: "anthropic" },
+		});
 		const params = await capturePayload(model);
 		expectAnthropicCacheMarkers(params);
 	});
 
 	it("moves the conversation cache marker to a tool result", async () => {
-		const model = getModel("openrouter", "anthropic/claude-sonnet-4");
+		const model = openAICompletionsModel("anthropic/claude-sonnet-4", {
+			compat: { cacheControlFormat: "anthropic" },
+		});
 		const timestamp = Date.now();
 		const params = await capturePayload(model, undefined, [
 			{ role: "user", content: "Read the file", timestamp },

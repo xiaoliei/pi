@@ -1,14 +1,11 @@
 import { lazyStream } from "./api/lazy.ts";
-import { defaultProviderAuthContext as defaultAuthContext } from "./auth/context.ts";
 import { InMemoryCredentialStore } from "./auth/credential-store.ts";
-import { type AuthResolutionOverrides, ModelsError, resolveProviderAuth } from "./auth/resolve.ts";
+import { type AuthResolutionOverrides, defaultAuthContext, ModelsError, resolveProviderAuth } from "./auth/resolve.ts";
 import type {
 	AuthCheck,
 	AuthContext,
-	AuthInteraction,
 	AuthOperationOptions,
 	AuthResult,
-	AuthType,
 	Credential,
 	CredentialStore,
 	ProviderAuth,
@@ -102,11 +99,9 @@ export interface Provider<TApi extends Api = Api> {
 	readonly headers?: ProviderHeaders;
 
 	/**
-	 * Required: at least one of `apiKey`/`oauth`. Every provider has auth
-	 * semantics — even providers with only ambient credentials (env vars, AWS
-	 * profiles, ADC files) and keyless local servers provide `apiKey` auth
-	 * whose `resolve()` reports whether the provider is configured.
-	 * `Models.getAuth()` returns undefined when the provider is unconfigured.
+	 * Auth semantics. Keyless endpoints (local llama.cpp/vLLM servers) may
+	 * carry an empty auth; `Models.getAuth()` then reports the provider as
+	 * unconfigured.
 	 */
 	readonly auth: ProviderAuth;
 
@@ -186,19 +181,11 @@ export interface Models {
 	 * Resolve provider-scoped auth by provider id, or provider auth plus static
 	 * model headers when passed a model. Includes a source label for status UI.
 	 * Resolves `undefined` when the provider is unknown or unconfigured.
-	 * Rejects with `ModelsError`: code "oauth" when a token refresh fails (the
-	 * stored credential is preserved for retry; re-login fixes it), code "auth"
-	 * when api-key resolution or the credential store fails. Request paths
-	 * surface rejections as stream errors.
+	 * Rejects with `ModelsError`: code "auth" when api-key resolution or the
+	 * credential store fails. Request paths surface rejections as stream errors.
 	 */
 	getAuth(providerId: string, overrides?: AuthResolutionOverrides): Promise<AuthResult | undefined>;
 	getAuth(model: Model<Api>, overrides?: AuthResolutionOverrides): Promise<AuthResult | undefined>;
-
-	/** Run a provider-owned login flow and persist its returned credential. */
-	login(providerId: string, type: AuthType, interaction: AuthInteraction): Promise<Credential>;
-
-	/** Remove the stored credential for a provider. */
-	logout(providerId: string, options?: AuthOperationOptions): Promise<void>;
 
 	stream<TApi extends Api>(
 		model: Model<TApi>,
@@ -450,22 +437,6 @@ class ModelsImpl implements MutableModels {
 		stored: Credential | undefined,
 		signal: AbortSignal,
 	): Promise<Credential | undefined> {
-		if (stored?.type === "oauth") {
-			const oauth = provider.auth.oauth;
-			if (!oauth) return undefined;
-			if (Date.now() < stored.expires) return stored;
-			if (signal.aborted) return undefined;
-			const post = await this.credentials.modify(
-				provider.id,
-				async (current) => {
-					if (current?.type !== "oauth" || Date.now() < current.expires) return undefined;
-					return oauth.refresh(current, signal);
-				},
-				{ signal },
-			);
-			return post?.type === "oauth" ? post : undefined;
-		}
-
 		const apiKey = provider.auth.apiKey;
 		if (!apiKey) return undefined;
 		const credential = stored?.type === "api_key" ? stored : undefined;
@@ -487,9 +458,6 @@ class ModelsImpl implements MutableModels {
 		credential: Credential | undefined,
 		signal: AbortSignal,
 	): Promise<AuthCheck | undefined> {
-		if (credential?.type === "oauth") {
-			return provider.auth.oauth ? { source: "OAuth", type: "oauth" } : undefined;
-		}
 		const apiKey = provider.auth.apiKey;
 		if (!apiKey) return undefined;
 		if (apiKey.check) {
@@ -560,69 +528,6 @@ class ModelsImpl implements MutableModels {
 				headers: mergeHeaders(result.auth.headers, providerOrModel.headers),
 			},
 		};
-	}
-
-	async login(providerId: string, type: AuthType, interaction: AuthInteraction): Promise<Credential> {
-		const signal = operationSignal(interaction.signal);
-		signal.throwIfAborted();
-		const provider = this.providers.get(providerId);
-		if (!provider) throw new ModelsError("provider", `Unknown provider: ${providerId}`);
-		const method = type === "oauth" ? provider.auth.oauth : provider.auth.apiKey;
-		if (!method?.login) {
-			throw new ModelsError("auth", `${provider.name} does not support ${type} login`);
-		}
-		const loginOperation: Promise<Credential> = method.login({ ...interaction, signal });
-		const credential = await raceWithAbortSignal(loginOperation, signal);
-		let mutationStarted = false;
-		let markMutationStarted: (() => void) | undefined;
-		const started = new Promise<void>((resolve) => {
-			markMutationStarted = resolve;
-		});
-		const mutation = this.credentials.modify(
-			providerId,
-			async () => {
-				mutationStarted = true;
-				markMutationStarted?.();
-				return credential;
-			},
-			{ signal },
-		);
-		void mutation.catch(() => {});
-		try {
-			await new Promise<void>((resolve, reject) => {
-				const onAbort = () => {
-					if (!mutationStarted) reject(signal.reason);
-				};
-				signal.addEventListener("abort", onAbort, { once: true });
-				void Promise.race([started, mutation]).then(
-					() => {
-						signal.removeEventListener("abort", onAbort);
-						resolve();
-					},
-					(error: unknown) => {
-						signal.removeEventListener("abort", onAbort);
-						reject(error);
-					},
-				);
-				if (signal.aborted) onAbort();
-			});
-			await mutation;
-		} catch (error) {
-			signal.throwIfAborted();
-			throw new ModelsError("auth", `Credential store modify failed for ${providerId}`, { cause: error });
-		}
-		return credential;
-	}
-
-	async logout(providerId: string, options?: AuthOperationOptions): Promise<void> {
-		const signal = operationSignal(options?.signal);
-		signal.throwIfAborted();
-		try {
-			await this.credentials.delete(providerId, { signal });
-		} catch (error) {
-			signal.throwIfAborted();
-			throw new ModelsError("auth", `Credential store delete failed for ${providerId}`, { cause: error });
-		}
 	}
 
 	private requireProvider(model: Model<Api>): Provider {

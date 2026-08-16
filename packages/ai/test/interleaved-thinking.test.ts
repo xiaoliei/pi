@@ -1,10 +1,9 @@
 import { Type } from "typebox";
 import { describe, expect, it } from "vitest";
-import { completeSimple, getModel } from "../src/compat.ts";
-import { getEnvApiKey } from "../src/env-api-keys.ts";
+import { completeSimple } from "../src/index.ts";
 import type { Api, Context, Model, StopReason, Tool, ToolCall, ToolResultMessage } from "../src/types.ts";
 import { StringEnum } from "../src/utils/typebox-helpers.ts";
-import { hasBedrockCredentials } from "./bedrock-utils.ts";
+import { anthropicModel } from "./fixtures.ts";
 
 const calculatorSchema = Type.Object({
 	a: Type.Number({ description: "First number" }),
@@ -32,7 +31,6 @@ function asCalculatorArguments(args: ToolCall["arguments"]): CalculatorArguments
 	if (typeof args !== "object" || args === null) {
 		throw new Error("Tool arguments must be an object");
 	}
-
 	const value = args as Record<string, unknown>;
 	const operation = value.operation;
 	if (
@@ -42,7 +40,6 @@ function asCalculatorArguments(args: ToolCall["arguments"]): CalculatorArguments
 	) {
 		throw new Error("Invalid calculator arguments");
 	}
-
 	return { a: value.a, b: value.b, operation };
 }
 
@@ -86,7 +83,6 @@ async function assertSecondToolCallWithInterleavedThinking<TApi extends Api>(
 	};
 
 	const firstResponse = await completeSimple(llm, context, { reasoning });
-
 	expect(firstResponse.stopReason, `Error: ${firstResponse.errorMessage}`).toBe("toolUse" satisfies StopReason);
 	expect(firstResponse.content.some((block) => block.type === "thinking")).toBe(true);
 	expect(firstResponse.content.some((block) => block.type === "toolCall")).toBe(true);
@@ -98,7 +94,6 @@ async function assertSecondToolCallWithInterleavedThinking<TApi extends Api>(
 	}
 
 	context.messages.push(firstResponse);
-
 	const correctAnswer = evaluateCalculatorCall(firstToolCall);
 	const firstToolResult: ToolResultMessage = {
 		role: "toolResult",
@@ -111,34 +106,14 @@ async function assertSecondToolCallWithInterleavedThinking<TApi extends Api>(
 	context.messages.push(firstToolResult);
 
 	const secondResponse = await completeSimple(llm, context, { reasoning });
-
 	expect(secondResponse.stopReason, `Error: ${secondResponse.errorMessage}`).toBe("stop" satisfies StopReason);
 	expect(secondResponse.content.some((block) => block.type === "thinking")).toBe(true);
 	expect(secondResponse.content.some((block) => block.type === "text")).toBe(true);
 }
 
-const hasAnthropicCredentials = !!getEnvApiKey("anthropic");
-
-describe.skipIf(!hasBedrockCredentials())("Amazon Bedrock interleaved thinking", () => {
-	it("should do interleaved thinking on Claude Opus 4.5", { retry: 3 }, async () => {
-		const llm = getModel("amazon-bedrock", "global.anthropic.claude-opus-4-5-20251101-v1:0");
-		await assertSecondToolCallWithInterleavedThinking(llm, "high");
-	});
-
+describe.skipIf(!process.env.ANTHROPIC_API_KEY)("Anthropic interleaved thinking", () => {
 	it("should do interleaved thinking on Claude Opus 4.6", { retry: 3 }, async () => {
-		const llm = getModel("amazon-bedrock", "global.anthropic.claude-opus-4-6-v1");
-		await assertSecondToolCallWithInterleavedThinking(llm, "high");
-	});
-});
-
-describe.skipIf(!hasAnthropicCredentials)("Anthropic interleaved thinking", () => {
-	it("should do interleaved thinking on Claude Opus 4.5", { retry: 3 }, async () => {
-		const llm = getModel("anthropic", "claude-opus-4-5");
-		await assertSecondToolCallWithInterleavedThinking(llm, "high");
-	});
-
-	it("should do interleaved thinking on Claude Opus 4.6", { retry: 3 }, async () => {
-		const llm = getModel("anthropic", "claude-opus-4-6");
+		const llm = anthropicModel("claude-opus-4-6", { compat: { forceAdaptiveThinking: true } });
 		await assertSecondToolCallWithInterleavedThinking(llm, "high");
 	});
 });

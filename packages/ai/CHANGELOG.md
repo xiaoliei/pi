@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+### Breaking Changes
+
+- Removed the generated provider catalog: all 39 provider model shards,
+  `models.generated.ts`, `providers/all.ts`, the `generate-models.ts` pipeline,
+  and `pi-ai/providers/*` exports are gone. Providers are user-configured
+  endpoints built with `endpointProvider()` (see `docs/plans/2026-07-29-user-endpoints-design.md`).
+- Removed 7 of 10 API protocol implementations. Only `anthropic-messages`,
+  `openai-completions`, and `openai-responses` remain.
+- Removed OAuth entirely: `oauth.ts`, `bun-oauth.ts`, `auth/oauth/*`, provider
+  login flows, `Models.login`/`logout`, `ProviderAuth.oauth`, and the `pi-ai`
+  OAuth CLI. API keys only.
+- Removed the `compat` entrypoint, `legacy-api-aliases.ts`, `env-api-keys.ts`,
+  and generated image models. Global dispatch (`stream`/`streamSimple`/
+  `complete`/`completeSimple`, `registerApiProvider`, `registerFauxProvider`)
+  now lives in `api-registry.ts` and is exported from the package root.
+
 ## [0.84.2] - 2026-08-14
 
 ### Added

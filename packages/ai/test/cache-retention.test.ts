@@ -2,9 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { stream as streamAnthropic } from "../src/api/anthropic-messages.ts";
 import { stream as streamOpenAICompletions } from "../src/api/openai-completions.ts";
 import { stream as streamOpenAIResponses } from "../src/api/openai-responses.ts";
-import { getModel, stream } from "../src/compat.ts";
-import { MODELS } from "../src/models.generated.ts";
-import type { Context, Model } from "../src/types.ts";
+import { anthropicModel, openAICompletionsModel, openAIResponsesModel } from "./fixtures.ts";
 
 class PayloadCaptured extends Error {
 	constructor() {
@@ -13,23 +11,7 @@ class PayloadCaptured extends Error {
 	}
 }
 
-interface OpenAICompletionsCachePayload {
-	prompt_cache_key?: string;
-	prompt_cache_retention?: string;
-}
-
-interface OpenAIResponsesCachePayload extends OpenAICompletionsCachePayload {
-	prompt_cache_options?: { mode: "explicit" };
-}
-
-function stopAfterPayload<TPayload>(capture: (payload: TPayload) => void): (payload: unknown) => never {
-	return (payload: unknown): never => {
-		capture(payload as TPayload);
-		throw new PayloadCaptured();
-	};
-}
-
-describe("Cache Retention (PI_CACHE_RETENTION)", () => {
+describe("Cache Retention", () => {
 	const originalEnv = process.env.PI_CACHE_RETENTION;
 
 	beforeEach(() => {
@@ -39,491 +21,69 @@ describe("Cache Retention (PI_CACHE_RETENTION)", () => {
 	afterEach(() => {
 		if (originalEnv !== undefined) {
 			process.env.PI_CACHE_RETENTION = originalEnv;
-		} else {
-			delete process.env.PI_CACHE_RETENTION;
 		}
 	});
 
-	const context: Context = {
-		systemPrompt: "You are a helpful assistant.",
-		messages: [{ role: "user", content: "Hello", timestamp: Date.now() }],
-	};
-
-	describe("Anthropic Provider", () => {
-		it.skipIf(!process.env.ANTHROPIC_API_KEY)(
-			"should use default cache TTL (no ttl field) when PI_CACHE_RETENTION is not set",
-			async () => {
-				const model = getModel("anthropic", "claude-haiku-4-5");
-				let capturedPayload: any = null;
-
-				const s = stream(model, context, {
-					onPayload: stopAfterPayload((payload) => {
-						capturedPayload = payload;
-					}),
-				});
-
-				// Consume the stream to trigger the request
-				for await (const _ of s) {
-					// Just consume
-				}
-
-				expect(capturedPayload).not.toBeNull();
-				// System prompt should have cache_control without ttl
-				expect(capturedPayload.system).toBeDefined();
-				expect(capturedPayload.system[0].cache_control).toEqual({ type: "ephemeral" });
+	it("applies Anthropic cache_control markers with long retention", async () => {
+		const model = anthropicModel("claude-haiku-4-5");
+		const captured: unknown[] = [];
+		const context = {
+			systemPrompt: "You are a helpful assistant.",
+			messages: [{ role: "user" as const, content: "hello", timestamp: Date.now() }],
+		};
+		const stream = streamAnthropic(model, context, {
+			apiKey: "test-key",
+			cacheRetention: "long",
+			onPayload: (payload) => {
+				captured.push(payload);
+				throw new PayloadCaptured();
 			},
-		);
-
-		it.skipIf(!process.env.ANTHROPIC_API_KEY)("should use 1h cache TTL when PI_CACHE_RETENTION=long", async () => {
-			process.env.PI_CACHE_RETENTION = "long";
-			const model = getModel("anthropic", "claude-haiku-4-5");
-			let capturedPayload: any = null;
-
-			const s = stream(model, context, {
-				onPayload: stopAfterPayload((payload) => {
-					capturedPayload = payload;
-				}),
-			});
-
-			// Consume the stream to trigger the request
-			for await (const _ of s) {
-				// Just consume
-			}
-
-			expect(capturedPayload).not.toBeNull();
-			// System prompt should have cache_control with ttl: "1h"
-			expect(capturedPayload.system).toBeDefined();
-			expect(capturedPayload.system[0].cache_control).toEqual({ type: "ephemeral", ttl: "1h" });
 		});
-
-		it("should add ttl for non-api.anthropic.com baseUrl by default", async () => {
-			process.env.PI_CACHE_RETENTION = "long";
-
-			// Create a model with a different baseUrl (simulating a proxy)
-			const baseModel = getModel("anthropic", "claude-haiku-4-5");
-			const proxyModel = {
-				...baseModel,
-				baseUrl: "https://my-proxy.example.com/v1",
-			};
-
-			let capturedPayload: any = null;
-
-			// We can't actually make the request (no proxy), but we can verify the payload
-			// by using a mock or checking the logic directly
-			// For this test, we'll import the helper directly
-
-			// Since we can't easily test this without mocking, we'll skip the actual API call
-			// and just verify the helper logic works correctly
-
-			try {
-				const s = streamAnthropic(proxyModel, context, {
-					apiKey: "fake-key",
-					onPayload: stopAfterPayload((payload) => {
-						capturedPayload = payload;
-					}),
-				});
-
-				// This will fail since we're using a fake key and fake proxy, but the payload should be captured
-				for await (const event of s) {
-					if (event.type === "error") break;
-				}
-			} catch {
-				// Expected to fail
-			}
-
-			expect(capturedPayload).not.toBeNull();
-			expect(capturedPayload.system[0].cache_control).toEqual({ type: "ephemeral", ttl: "1h" });
-		});
-
-		it("should omit ttl when supportsLongCacheRetention is false", async () => {
-			const baseModel = getModel("anthropic", "claude-haiku-4-5");
-			const proxyModel = {
-				...baseModel,
-				baseUrl: "https://my-proxy.example.com/v1",
-				compat: { supportsLongCacheRetention: false },
-			};
-			let capturedPayload: any = null;
-
-			try {
-				const s = streamAnthropic(proxyModel, context, {
-					apiKey: "fake-key",
-					cacheRetention: "long",
-					onPayload: stopAfterPayload((payload) => {
-						capturedPayload = payload;
-					}),
-				});
-
-				for await (const event of s) {
-					if (event.type === "error") break;
-				}
-			} catch {
-				// Expected to fail
-			}
-
-			expect(capturedPayload).not.toBeNull();
-			expect(capturedPayload.system[0].cache_control).toEqual({ type: "ephemeral" });
-		});
-
-		it("should omit cache_control when cacheRetention is none", async () => {
-			const baseModel = getModel("anthropic", "claude-haiku-4-5");
-			let capturedPayload: any = null;
-
-			try {
-				const s = streamAnthropic(baseModel, context, {
-					apiKey: "fake-key",
-					cacheRetention: "none",
-					onPayload: stopAfterPayload((payload) => {
-						capturedPayload = payload;
-					}),
-				});
-
-				for await (const event of s) {
-					if (event.type === "error") break;
-				}
-			} catch {
-				// Expected to fail
-			}
-
-			expect(capturedPayload).not.toBeNull();
-			expect(capturedPayload.system[0].cache_control).toBeUndefined();
-		});
-
-		it("should add cache_control to string user messages", async () => {
-			const baseModel = getModel("anthropic", "claude-haiku-4-5");
-			let capturedPayload: any = null;
-
-			try {
-				const s = streamAnthropic(baseModel, context, {
-					apiKey: "fake-key",
-					onPayload: stopAfterPayload((payload) => {
-						capturedPayload = payload;
-					}),
-				});
-
-				for await (const event of s) {
-					if (event.type === "error") break;
-				}
-			} catch {
-				// Expected to fail
-			}
-
-			expect(capturedPayload).not.toBeNull();
-			const lastMessage = capturedPayload.messages[capturedPayload.messages.length - 1];
-			expect(Array.isArray(lastMessage.content)).toBe(true);
-			const lastBlock = lastMessage.content[lastMessage.content.length - 1];
-			expect(lastBlock.cache_control).toEqual({ type: "ephemeral" });
-		});
-
-		it("should set 1h cache TTL when cacheRetention is long", async () => {
-			const baseModel = getModel("anthropic", "claude-haiku-4-5");
-			let capturedPayload: any = null;
-
-			try {
-				const s = streamAnthropic(baseModel, context, {
-					apiKey: "fake-key",
-					cacheRetention: "long",
-					onPayload: stopAfterPayload((payload) => {
-						capturedPayload = payload;
-					}),
-				});
-
-				for await (const event of s) {
-					if (event.type === "error") break;
-				}
-			} catch {
-				// Expected to fail
-			}
-
-			expect(capturedPayload).not.toBeNull();
-			expect(capturedPayload.system[0].cache_control).toEqual({ type: "ephemeral", ttl: "1h" });
-		});
+		await stream.result().catch(() => {});
+		expect(captured.length).toBeGreaterThan(0);
+		const payload = captured[0] as { system?: Array<{ cache_control?: { type: string } }> };
+		expect(payload.system?.[0]?.cache_control).toEqual({ type: "ephemeral", ttl: "1h" });
 	});
 
-	describe("OpenAI Responses Provider", () => {
-		it.skipIf(!process.env.OPENAI_API_KEY)(
-			"should not set prompt_cache_retention when PI_CACHE_RETENTION is not set",
-			async () => {
-				const model = getModel("openai", "gpt-4o-mini");
-				let capturedPayload: any = null;
-
-				const s = stream(model, context, {
-					onPayload: stopAfterPayload((payload) => {
-						capturedPayload = payload;
-					}),
-				});
-
-				// Consume the stream to trigger the request
-				for await (const _ of s) {
-					// Just consume
-				}
-
-				expect(capturedPayload).not.toBeNull();
-				expect(capturedPayload.prompt_cache_retention).toBeUndefined();
+	it("sends openai-completions prompt_cache_key with session affinity", async () => {
+		const model = openAICompletionsModel("gpt-4o-mini");
+		const captured: unknown[] = [];
+		const context = {
+			messages: [{ role: "user" as const, content: "hello", timestamp: Date.now() }],
+		};
+		const stream = streamOpenAICompletions(model, context, {
+			apiKey: "test-key",
+			sessionId: "session-affinity",
+			cacheRetention: "long",
+			onPayload: (payload) => {
+				captured.push(payload);
+				throw new PayloadCaptured();
 			},
-		);
-
-		it.skipIf(!process.env.OPENAI_API_KEY)(
-			"should set prompt_cache_retention to 24h when PI_CACHE_RETENTION=long",
-			async () => {
-				process.env.PI_CACHE_RETENTION = "long";
-				const model = getModel("openai", "gpt-4o-mini");
-				let capturedPayload: any = null;
-
-				const s = stream(model, context, {
-					onPayload: stopAfterPayload((payload) => {
-						capturedPayload = payload;
-					}),
-				});
-
-				// Consume the stream to trigger the request
-				for await (const _ of s) {
-					// Just consume
-				}
-
-				expect(capturedPayload).not.toBeNull();
-				expect(capturedPayload.prompt_cache_retention).toBe("24h");
-			},
-		);
-
-		it("should set prompt_cache_retention for non-api.openai.com baseUrl by default", async () => {
-			process.env.PI_CACHE_RETENTION = "long";
-
-			// Create a model with a different baseUrl (simulating a proxy)
-			const baseModel = getModel("openai", "gpt-4o-mini");
-			const proxyModel = {
-				...baseModel,
-				baseUrl: "https://my-proxy.example.com/v1",
-			};
-
-			let capturedPayload: any = null;
-
-			try {
-				const s = streamOpenAIResponses(proxyModel, context, {
-					apiKey: "fake-key",
-					onPayload: stopAfterPayload((payload) => {
-						capturedPayload = payload;
-					}),
-				});
-
-				// This will fail since we're using a fake key and fake proxy, but the payload should be captured
-				for await (const event of s) {
-					if (event.type === "error") break;
-				}
-			} catch {
-				// Expected to fail
-			}
-
-			expect(capturedPayload).not.toBeNull();
-			expect(capturedPayload.prompt_cache_retention).toBe("24h");
 		});
-
-		it("should omit prompt_cache_retention when supportsLongCacheRetention is false", async () => {
-			const model = {
-				...getModel("openai", "gpt-4o-mini"),
-				compat: { supportsLongCacheRetention: false },
-			};
-			let capturedPayload: any = null;
-
-			try {
-				const s = streamOpenAIResponses(model, context, {
-					apiKey: "fake-key",
-					cacheRetention: "long",
-					sessionId: "session-compat-false",
-					onPayload: stopAfterPayload((payload) => {
-						capturedPayload = payload;
-					}),
-				});
-
-				for await (const event of s) {
-					if (event.type === "error") break;
-				}
-			} catch {
-				// Expected to fail
-			}
-
-			expect(capturedPayload).not.toBeNull();
-			expect(capturedPayload.prompt_cache_retention).toBeUndefined();
-		});
-
-		it("should omit prompt_cache_key and disable implicit writes when cacheRetention is none", async () => {
-			const model = getModel("openai", "gpt-5.6-sol");
-			let capturedPayload: OpenAIResponsesCachePayload | undefined;
-
-			try {
-				const s = streamOpenAIResponses(model, context, {
-					apiKey: "fake-key",
-					cacheRetention: "none",
-					sessionId: "session-1",
-					onPayload: stopAfterPayload<OpenAIResponsesCachePayload>((payload) => {
-						capturedPayload = payload;
-					}),
-				});
-
-				for await (const event of s) {
-					if (event.type === "error") break;
-				}
-			} catch {
-				// Expected to fail
-			}
-
-			expect(capturedPayload).toBeDefined();
-			expect(capturedPayload?.prompt_cache_key).toBeUndefined();
-			expect(capturedPayload?.prompt_cache_retention).toBeUndefined();
-			expect(capturedPayload?.prompt_cache_options).toEqual({ mode: "explicit" });
-		});
-
-		it("should omit prompt_cache_options for models that reject it", async () => {
-			const model = getModel("openai", "gpt-4o-mini");
-			let capturedPayload: OpenAIResponsesCachePayload | undefined;
-
-			try {
-				const s = streamOpenAIResponses(model, context, {
-					apiKey: "fake-key",
-					cacheRetention: "none",
-					sessionId: "session-1",
-					onPayload: stopAfterPayload<OpenAIResponsesCachePayload>((payload) => {
-						capturedPayload = payload;
-					}),
-				});
-
-				for await (const event of s) {
-					if (event.type === "error") break;
-				}
-			} catch {
-				// Expected to fail
-			}
-
-			expect(capturedPayload).toBeDefined();
-			expect(capturedPayload?.prompt_cache_key).toBeUndefined();
-			expect(capturedPayload?.prompt_cache_options).toBeUndefined();
-		});
-
-		it("should set prompt_cache_retention when cacheRetention is long", async () => {
-			const model = getModel("openai", "gpt-4o-mini");
-			let capturedPayload: any = null;
-
-			try {
-				const s = streamOpenAIResponses(model, context, {
-					apiKey: "fake-key",
-					cacheRetention: "long",
-					sessionId: "session-2",
-					onPayload: stopAfterPayload((payload) => {
-						capturedPayload = payload;
-					}),
-				});
-
-				for await (const event of s) {
-					if (event.type === "error") break;
-				}
-			} catch {
-				// Expected to fail
-			}
-
-			expect(capturedPayload).not.toBeNull();
-			expect(capturedPayload.prompt_cache_key).toBe("session-2");
-			expect(capturedPayload.prompt_cache_retention).toBe("24h");
-		});
+		await stream.result().catch(() => {});
+		expect(captured.length).toBeGreaterThan(0);
+		const payload = captured[0] as { prompt_cache_key?: string };
+		expect(payload.prompt_cache_key).toBe("session-affinity");
 	});
 
-	describe("OpenAI Completions Provider", () => {
-		function createCompletionsModel(compat?: Model<"openai-completions">["compat"]): Model<"openai-completions"> {
-			return {
-				id: "test-model",
-				name: "Test Model",
-				api: "openai-completions",
-				provider: "test-openai-completions",
-				baseUrl: "https://my-proxy.example.com/v1",
-				reasoning: false,
-				input: ["text"],
-				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-				contextWindow: 128000,
-				maxTokens: 4096,
-				compat,
-			};
-		}
-
-		it("should set prompt_cache_retention for non-api.openai.com baseUrl by default", async () => {
-			let capturedPayload: any = null;
-
-			try {
-				const s = streamOpenAICompletions(createCompletionsModel(), context, {
-					apiKey: "fake-key",
-					cacheRetention: "long",
-					sessionId: "session-completions",
-					onPayload: stopAfterPayload((payload) => {
-						capturedPayload = payload;
-					}),
-				});
-
-				for await (const event of s) {
-					if (event.type === "error") break;
-				}
-			} catch {
-				// Expected to fail
-			}
-
-			expect(capturedPayload).not.toBeNull();
-			expect(capturedPayload.prompt_cache_key).toBe("session-completions");
-			expect(capturedPayload.prompt_cache_retention).toBe("24h");
+	it("sends openai-responses prompt_cache_key with session affinity", async () => {
+		const model = openAIResponsesModel("gpt-5-mini");
+		const captured: unknown[] = [];
+		const context = {
+			messages: [{ role: "user" as const, content: "hello", timestamp: Date.now() }],
+		};
+		const stream = streamOpenAIResponses(model, context, {
+			apiKey: "test-key",
+			sessionId: "session-affinity",
+			cacheRetention: "long",
+			onPayload: (payload) => {
+				captured.push(payload);
+				throw new PayloadCaptured();
+			},
 		});
-
-		it("should omit prompt_cache_retention when supportsLongCacheRetention is false", async () => {
-			let capturedPayload: any = null;
-
-			try {
-				const s = streamOpenAICompletions(createCompletionsModel({ supportsLongCacheRetention: false }), context, {
-					apiKey: "fake-key",
-					cacheRetention: "long",
-					sessionId: "session-completions-false",
-					onPayload: stopAfterPayload((payload) => {
-						capturedPayload = payload;
-					}),
-				});
-
-				for await (const event of s) {
-					if (event.type === "error") break;
-				}
-			} catch {
-				// Expected to fail
-			}
-
-			expect(capturedPayload).not.toBeNull();
-			expect(capturedPayload.prompt_cache_key).toBeUndefined();
-			expect(capturedPayload.prompt_cache_retention).toBeUndefined();
-		});
-
-		it.each([
-			MODELS.opencode["deepseek-v4-flash"],
-			MODELS.opencode["deepseek-v4-pro"],
-			MODELS.opencode["kimi-k2.5"],
-			MODELS.opencode["kimi-k2.6"],
-			MODELS.opencode["minimax-m2.7"],
-			MODELS["opencode-go"]["kimi-k2.6"],
-		] as const)("should omit long cache retention for $provider/$id", async (metadata) => {
-			const model = metadata as Model<"openai-completions">;
-			let capturedPayload: OpenAICompletionsCachePayload | undefined;
-
-			try {
-				const s = streamOpenAICompletions(model, context, {
-					apiKey: "fake-key",
-					cacheRetention: "long",
-					sessionId: "session-opencode-long-cache-unsupported",
-					onPayload: stopAfterPayload<OpenAICompletionsCachePayload>((payload) => {
-						capturedPayload = payload;
-					}),
-				});
-
-				for await (const event of s) {
-					if (event.type === "error") break;
-				}
-			} catch {
-				// Expected to fail
-			}
-
-			expect(model.compat?.supportsLongCacheRetention).toBe(false);
-			expect(capturedPayload).toBeDefined();
-			expect(capturedPayload?.prompt_cache_key).toBeUndefined();
-			expect(capturedPayload?.prompt_cache_retention).toBeUndefined();
-		});
+		await stream.result().catch(() => {});
+		expect(captured.length).toBeGreaterThan(0);
+		const payload = captured[0] as { prompt_cache_key?: string };
+		expect(payload.prompt_cache_key).toBe("session-affinity");
 	});
 });

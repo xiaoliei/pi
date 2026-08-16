@@ -1,7 +1,10 @@
 import { Type } from "typebox";
 import { describe, expect, it } from "vitest";
-import { complete, getEnvApiKey, getModel } from "../src/compat.ts";
-import type { AssistantMessage, Context, Message, Tool, ToolCall } from "../src/types.ts";
+import { complete } from "../src/index.ts";
+import type { AssistantMessage, Context, Message, StreamOptions, Tool, ToolCall } from "../src/types.ts";
+import { anthropicModel, openAIResponsesModel } from "./fixtures.ts";
+
+type RequestOptions = StreamOptions & Record<string, unknown>;
 
 const testToolSchema = Type.Object({
 	value: Type.Number({ description: "A number to double" }),
@@ -17,12 +20,8 @@ describe.skipIf(!process.env.OPENAI_API_KEY || !process.env.ANTHROPIC_API_KEY)(
 	"OpenAI Responses reasoning replay e2e",
 	() => {
 		it("skips reasoning-only history after an aborted turn", { retry: 2 }, async () => {
-			const model = getModel("openai", "gpt-5-mini");
-
-			const apiKey = getEnvApiKey("openai");
-			if (!apiKey) {
-				throw new Error("Missing OPENAI_API_KEY");
-			}
+			const model = openAIResponsesModel("gpt-5-mini");
+			const apiKey = process.env.OPENAI_API_KEY!;
 
 			const userMessage: Message = {
 				role: "user",
@@ -37,10 +36,7 @@ describe.skipIf(!process.env.OPENAI_API_KEY || !process.env.ANTHROPIC_API_KEY)(
 					messages: [userMessage],
 					tools: [testTool],
 				},
-				{
-					apiKey,
-					reasoningEffort: "high",
-				},
+				{ apiKey, reasoningEffort: "high" } as RequestOptions,
 			);
 
 			const thinkingBlock = assistantResponse.content.find(
@@ -71,7 +67,7 @@ describe.skipIf(!process.env.OPENAI_API_KEY || !process.env.ANTHROPIC_API_KEY)(
 			const response = await complete(model, context, {
 				apiKey,
 				reasoningEffort: "high",
-			});
+			} as RequestOptions);
 
 			// The key assertion: no 400 error from orphaned reasoning item
 			expect(response.stopReason, `Error: ${response.errorMessage}`).not.toBe("error");
@@ -89,13 +85,9 @@ describe.skipIf(!process.env.OPENAI_API_KEY || !process.env.ANTHROPIC_API_KEY)(
 			// 5. Without fix: OpenAI returns 400 "function_call without required reasoning item"
 			// 6. With fix: tool calls/results converted to text, conversation continues
 
-			const modelA = getModel("openai", "gpt-5-mini");
-			const modelB = getModel("openai", "gpt-5.5");
-
-			const apiKey = getEnvApiKey("openai");
-			if (!apiKey) {
-				throw new Error("Missing OPENAI_API_KEY");
-			}
+			const modelA = openAIResponsesModel("gpt-5-mini");
+			const modelB = openAIResponsesModel("gpt-5.5");
+			const apiKey = process.env.OPENAI_API_KEY!;
 
 			const userMessage: Message = {
 				role: "user",
@@ -111,10 +103,7 @@ describe.skipIf(!process.env.OPENAI_API_KEY || !process.env.ANTHROPIC_API_KEY)(
 					messages: [userMessage],
 					tools: [testTool],
 				},
-				{
-					apiKey,
-					reasoningEffort: "high",
-				},
+				{ apiKey, reasoningEffort: "high" } as RequestOptions,
 			);
 
 			const toolCallBlock = assistantResponse.content.find((block) => block.type === "toolCall") as
@@ -155,7 +144,7 @@ describe.skipIf(!process.env.OPENAI_API_KEY || !process.env.ANTHROPIC_API_KEY)(
 				onPayload: (payload) => {
 					capturedPayload = payload;
 				},
-			});
+			} as RequestOptions);
 
 			// The key assertion: no 400 error from orphaned function_call
 			expect(response.stopReason, `Error: ${response.errorMessage}`).not.toBe("error");
@@ -188,14 +177,10 @@ describe.skipIf(!process.env.OPENAI_API_KEY || !process.env.ANTHROPIC_API_KEY)(
 			// 4. Tool call ID is Anthropic format (toolu_xxx), no OpenAI pairing history
 			// 5. Should work because foreign IDs have no pairing expectation
 
-			const anthropicModel = getModel("anthropic", "claude-sonnet-4-5");
-			const codexModel = getModel("openai", "gpt-5.5");
-
-			const anthropicApiKey = getEnvApiKey("anthropic");
-			const openaiApiKey = getEnvApiKey("openai");
-			if (!anthropicApiKey || !openaiApiKey) {
-				throw new Error("Missing API keys");
-			}
+			const anthropicModelFixture = anthropicModel("claude-sonnet-4-5");
+			const codexModel = openAIResponsesModel("gpt-5.5");
+			const anthropicApiKey = process.env.ANTHROPIC_API_KEY!;
+			const openaiApiKey = process.env.OPENAI_API_KEY!;
 
 			const userMessage: Message = {
 				role: "user",
@@ -205,7 +190,7 @@ describe.skipIf(!process.env.OPENAI_API_KEY || !process.env.ANTHROPIC_API_KEY)(
 
 			// Get a real response from Anthropic with thinking + tool call
 			const assistantResponse = await complete(
-				anthropicModel,
+				anthropicModelFixture,
 				{
 					systemPrompt: "You are a helpful assistant. Always use the tool when asked.",
 					messages: [userMessage],
@@ -215,7 +200,7 @@ describe.skipIf(!process.env.OPENAI_API_KEY || !process.env.ANTHROPIC_API_KEY)(
 					apiKey: anthropicApiKey,
 					thinkingEnabled: true,
 					thinkingBudgetTokens: 5000,
-				},
+				} as RequestOptions,
 			);
 
 			const toolCallBlock = assistantResponse.content.find((block) => block.type === "toolCall") as
@@ -258,7 +243,7 @@ describe.skipIf(!process.env.OPENAI_API_KEY || !process.env.ANTHROPIC_API_KEY)(
 				onPayload: (payload) => {
 					capturedPayload = payload;
 				},
-			});
+			} as RequestOptions);
 
 			// Log what was sent
 			const input = capturedPayload?.input as any[];

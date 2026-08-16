@@ -1,9 +1,12 @@
 import { NOOP_TELEMETRY_CONTEXT, type TelemetryContext } from "@earendil-works/pi-telemetry";
 import { describe, expect, it } from "vitest";
 import { buildBaseOptions } from "../src/api/simple-options.ts";
-import { generateImages } from "../src/images.ts";
-import { registerImagesApiProvider } from "../src/images-api-registry.ts";
-import { createImagesModels, createImagesProvider } from "../src/images-models.ts";
+import {
+	createImagesModels,
+	createImagesProvider,
+	generateImages,
+	registerImagesApiProvider,
+} from "../src/images-models.ts";
 import { createModels, createProvider } from "../src/models.ts";
 import type {
 	Context,

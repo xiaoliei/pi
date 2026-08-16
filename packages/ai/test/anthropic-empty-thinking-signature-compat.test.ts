@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { getModel, streamSimple } from "../src/compat.ts";
+import { streamSimple } from "../src/index.ts";
 import type { AssistantMessage, Context, Model } from "../src/types.ts";
+import { anthropicModel } from "./fixtures.ts";
 
 interface AnthropicPayload {
 	messages?: Array<{
@@ -98,7 +99,10 @@ describe("Anthropic empty thinking signature compat", () => {
 	});
 
 	it.each(["k3"] as const)("allows empty signatures for Kimi Coding %s", async (modelId) => {
-		const model = getModel("kimi-coding", modelId);
+		const model = anthropicModel(modelId, {
+			provider: "kimi-coding",
+			compat: { allowEmptySignature: true },
+		});
 		expect(model.compat?.allowEmptySignature).toBe(true);
 
 		const payload = await capturePayload(model, makeContext(" ", "internal reasoning", "kimi-coding", modelId));

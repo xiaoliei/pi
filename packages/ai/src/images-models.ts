@@ -1,9 +1,16 @@
-import { defaultProviderAuthContext as defaultAuthContext } from "./auth/context.ts";
 import { InMemoryCredentialStore } from "./auth/credential-store.ts";
-import { type AuthResolutionOverrides, ModelsError, resolveProviderAuth } from "./auth/resolve.ts";
+import { type AuthResolutionOverrides, defaultAuthContext, ModelsError, resolveProviderAuth } from "./auth/resolve.ts";
 import type { AuthContext, AuthResult, CredentialStore, ProviderAuth } from "./auth/types.ts";
 import type { CreateModelsOptions } from "./models.ts";
-import type { AssistantImages, ImagesApi, ImagesContext, ImagesModel, ImagesOptions, ProviderImages } from "./types.ts";
+import type {
+	AssistantImages,
+	ImagesApi,
+	ImagesContext,
+	ImagesFunction,
+	ImagesModel,
+	ImagesOptions,
+	ProviderImages,
+} from "./types.ts";
 
 /**
  * An image-generation provider: the image-side counterpart of `Provider`.
@@ -14,9 +21,8 @@ export interface ImagesProvider {
 	readonly name: string;
 
 	/**
-	 * Required: at least one of `apiKey`/`oauth`. Same semantics as chat
-	 * providers; `ImagesModels.getAuth()` returns undefined when the provider
-	 * is unconfigured.
+	 * Auth semantics; same as chat providers. Keyless image endpoints may
+	 * carry an empty auth.
 	 */
 	readonly auth: ProviderAuth;
 
@@ -70,7 +76,7 @@ export interface ImagesModels {
 	/**
 	 * Resolve request auth by provider id or image model. Same contract as
 	 * `Models.getAuth()`: undefined when unknown/unconfigured, rejects with
-	 * `ModelsError` ("oauth"/"auth") on real failures.
+	 * `ModelsError` ("auth") on real failures.
 	 */
 	getAuth(providerId: string, overrides?: AuthResolutionOverrides): Promise<AuthResult | undefined>;
 	getAuth(model: ImagesModel<ImagesApi>, overrides?: AuthResolutionOverrides): Promise<AuthResult | undefined>;
@@ -272,4 +278,69 @@ export function createImagesProvider(input: CreateImagesProviderOptions): Images
 			: undefined,
 		generateImages: (model, context, options) => input.api.generateImages(model, context, options),
 	};
+}
+
+export type ImagesApiFunction = (
+	model: ImagesModel<ImagesApi>,
+	context: ImagesContext,
+	options?: ImagesOptions,
+) => Promise<AssistantImages>;
+
+export interface ImagesApiProvider<TApi extends ImagesApi = ImagesApi, TOptions extends ImagesOptions = ImagesOptions> {
+	api: TApi;
+	generateImages: ImagesFunction<TApi, TOptions>;
+}
+
+interface ImagesApiProviderInternal {
+	api: ImagesApi;
+	generateImages: ImagesApiFunction;
+}
+
+type RegisteredImagesApiProvider = {
+	provider: ImagesApiProviderInternal;
+	sourceId?: string;
+};
+
+const imagesApiProviderRegistry = new Map<string, RegisteredImagesApiProvider>();
+
+function wrapGenerateImages<TApi extends ImagesApi, TOptions extends ImagesOptions>(
+	api: TApi,
+	generateImages: ImagesFunction<TApi, TOptions>,
+): ImagesApiFunction {
+	return (model, context, options) => {
+		if (model.api !== api) {
+			throw new Error(`Mismatched api: ${model.api} expected ${api}`);
+		}
+		return generateImages(model as ImagesModel<TApi>, context, options as TOptions);
+	};
+}
+
+export function registerImagesApiProvider<TApi extends ImagesApi, TOptions extends ImagesOptions>(
+	provider: ImagesApiProvider<TApi, TOptions>,
+	sourceId?: string,
+): void {
+	imagesApiProviderRegistry.set(provider.api, {
+		provider: {
+			api: provider.api,
+			generateImages: wrapGenerateImages(provider.api, provider.generateImages),
+		},
+		sourceId,
+	});
+}
+
+export function getImagesApiProvider(api: ImagesApi): ImagesApiProviderInternal | undefined {
+	return imagesApiProviderRegistry.get(api)?.provider;
+}
+
+/** Global image-generation dispatch by model api. No builtin image APIs are registered. */
+export async function generateImages<TApi extends ImagesApi>(
+	model: ImagesModel<TApi>,
+	context: ImagesContext,
+	options?: ImagesOptions,
+): Promise<AssistantImages> {
+	const provider = getImagesApiProvider(model.api);
+	if (!provider) {
+		throw new Error(`No image API provider registered for api: ${model.api}`);
+	}
+	return provider.generateImages(model, context, options);
 }
