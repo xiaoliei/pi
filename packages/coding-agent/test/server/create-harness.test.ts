@@ -155,14 +155,14 @@ describe("coding-agent Harness construction", () => {
 			expect(env.executionOverrides).toEqual({
 				PI_SESSION_ID: "session-file-harness",
 				PI_SESSION_FILE: "/sessions/current.jsonl",
-				PI_PROVIDER: "google",
-				PI_MODEL: "gemini-2.5-flash",
+				PI_PROVIDER: "anthropic",
+				PI_MODEL: "test-model",
 				PI_REASONING_LEVEL: "high",
 			});
 			expect(result.content).toEqual([
 				{
 					type: "text",
-					text: "session-file-harness|/sessions/current.jsonl|google|gemini-2.5-flash|high|true",
+					text: "session-file-harness|/sessions/current.jsonl|anthropic|test-model|high|true",
 				},
 			]);
 		} finally {
@@ -198,7 +198,7 @@ describe("coding-agent Harness construction", () => {
 				PI_SESSION_ID: "dynamic-bash-session",
 				PI_SESSION_FILE: "",
 				PI_PROVIDER: "anthropic",
-				PI_MODEL: "claude-sonnet-4-5",
+				PI_MODEL: "test-model",
 				PI_REASONING_LEVEL: "low",
 			});
 			expect(Object.hasOwn(env.executionOverrides ?? {}, "PI_SESSION_FILE")).toBe(true);
@@ -206,7 +206,7 @@ describe("coding-agent Harness construction", () => {
 			expect(result.content).toEqual([
 				{
 					type: "text",
-					text: "x:dynamic-bash-session|anthropic|claude-sonnet-4-5|low|true",
+					text: "x:dynamic-bash-session|anthropic|test-model|low|true",
 				},
 			]);
 		} finally {
