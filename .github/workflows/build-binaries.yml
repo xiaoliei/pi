@@ -3,15 +3,15 @@ name: Build Binaries
 on:
   push:
     tags:
-      - 'v*'
+      - "v*"
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Tag to build (e.g., v0.12.0)'
+        description: "Tag to build (e.g., v0.12.0)"
         required: true
         type: string
       source_ref:
-        description: 'Source ref to build/publish (defaults to tag; use only for release recovery)'
+        description: "Source ref to build/publish (defaults to tag; use only for release recovery)"
         required: false
         type: string
 
@@ -46,8 +46,8 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: '22'
-          registry-url: 'https://registry.npmjs.org'
+          node-version: "22"
+          registry-url: "https://registry.npmjs.org"
 
       - name: Create source archive
         run: |
@@ -219,7 +219,6 @@ jobs:
   publish-npm:
     runs-on: ubuntu-latest
     needs: stage-github-release
-    environment: npm-publish
     permissions:
       contents: read
       id-token: write
@@ -236,8 +235,8 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: '22'
-          registry-url: 'https://registry.npmjs.org'
+          node-version: "22"
+          registry-url: "https://registry.npmjs.org"
           cache: npm
 
       - name: Install system dependencies
@@ -258,15 +257,19 @@ jobs:
       - name: Test
         run: npm test
 
-      - name: Upgrade npm for trusted publishing
+      - name: Upgrade npm for publishing
         run: |
           npm install -g npm@11.16.0 --ignore-scripts
           npm --version
 
       - name: Publish npm packages
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: node scripts/publish.mjs
 
   announce-pi-dev-release:
+    # Fork: upstream pi.dev announcement disabled (no R2 credentials here).
+    if: ${{ false }}
     runs-on: ubuntu-latest
     needs: publish-npm
     environment: pi-model-upload
@@ -281,7 +284,7 @@ jobs:
       AWS_ACCESS_KEY_ID: ${{ secrets.PI_ARTIFACTS_R2_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.PI_ARTIFACTS_R2_SECRET_ACCESS_KEY }}
       AWS_DEFAULT_REGION: auto
-      AWS_EC2_METADATA_DISABLED: 'true'
+      AWS_EC2_METADATA_DISABLED: "true"
       R2_ENDPOINT: https://67c0d357268b0fca6e0b465bb9d01b84.r2.cloudflarestorage.com
     steps:
       - name: Checkout
@@ -293,7 +296,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: '22'
+          node-version: "22"
 
       - name: Verify AWS CLI
         run: aws --version
@@ -310,7 +313,6 @@ jobs:
     needs:
       - stage-github-release
       - publish-npm
-      - announce-pi-dev-release
     permissions:
       contents: write
     env:
@@ -323,7 +325,8 @@ jobs:
         run: |
           set -euo pipefail
 
-          existing_release="$(gh release view "${RELEASE_TAG}" --json isDraft --jq .isDraft 2>/dev/null || true)"
+          existing_release="$(gh release view "${RELEASE_TAG}" \
+            --json isDraft --jq .isDraft 2>/dev/null || true)"
           if [[ "${existing_release}" == "" ]]; then
             echo "::error::Draft GitHub Release ${RELEASE_TAG} does not exist."
             exit 1
@@ -341,9 +344,14 @@ jobs:
       - build
       - stage-github-release
       - publish-npm
-      - announce-pi-dev-release
       - publish-github-release
-    if: ${{ always() && needs.stage-github-release.result != 'skipped' && (needs.stage-github-release.result != 'success' || needs.publish-npm.result != 'success' || needs.announce-pi-dev-release.result != 'success' || needs.publish-github-release.result != 'success') }}
+    if: >-
+      ${{ always() &&
+      needs.stage-github-release.result != 'skipped' &&
+      (needs.stage-github-release.result != 'success' ||
+      needs.publish-npm.result != 'success' ||
+      needs.publish-github-release.result != 'success') }}
+    # Fork: upstream pi.dev announcement job removed from this chain.
     permissions:
       contents: write
     env:
@@ -356,7 +364,8 @@ jobs:
         run: |
           set -euo pipefail
 
-          existing_release="$(gh release view "${RELEASE_TAG}" --json isDraft --jq .isDraft 2>/dev/null || true)"
+          existing_release="$(gh release view "${RELEASE_TAG}" \
+            --json isDraft --jq .isDraft 2>/dev/null || true)"
           if [[ "${existing_release}" == "true" ]]; then
             gh release delete "${RELEASE_TAG}" --yes
           fi

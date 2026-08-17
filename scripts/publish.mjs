@@ -43,7 +43,19 @@ function assertBuildOutputExists(directory) {
 
 function validatePack(directory) {
 	const result = run("npm", ["pack", "--dry-run", "--ignore-scripts", "--json"], { capture: true, cwd: directory });
-	const packed = JSON.parse(result.stdout)[0];
+	let parsed;
+	try {
+		parsed = JSON.parse(result.stdout);
+	} catch (error) {
+		throw new Error(
+			`Failed to parse npm pack output for ${directory}: ${error instanceof Error ? error.message : error}`,
+		);
+	}
+	// npm <11.6 returns an array; newer npm returns an object keyed by package name.
+	const packed = Array.isArray(parsed) ? parsed[0] : Object.values(parsed)[0];
+	if (!packed) {
+		throw new Error(`npm pack output for ${directory} contained no package entries`);
+	}
 	console.log(`  ${packed.filename}: ${packed.files.length} files, ${packed.size} bytes packed, ${packed.unpackedSize} bytes unpacked`);
 }
 
@@ -99,12 +111,16 @@ if (dryRun) {
 
 console.log("All packages validated; starting publication.\n");
 
+// --provenance requires an OIDC token from a CI environment. Token-based
+// publishing (NODE_AUTH_TOKEN) does not provide one, so drop the flag there.
+const provenanceArgs = process.env.NODE_AUTH_TOKEN ? [] : ["--provenance"];
+
 for (const pkg of packageStates) {
 	if (pkg.published) {
 		console.log(`Skipping ${pkg.name}@${pkg.version}: already published\n`);
 		continue;
 	}
 
-	run("npm", ["publish", "--access", "public", "--provenance", "--ignore-scripts"], { cwd: pkg.directory });
+	run("npm", ["publish", "--access", "public", "--ignore-scripts", ...provenanceArgs], { cwd: pkg.directory });
 	console.log();
 }
