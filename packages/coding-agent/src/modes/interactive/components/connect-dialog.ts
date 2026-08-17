@@ -868,7 +868,7 @@ export class ConnectDialogComponent extends Container implements Focusable {
 				await this.rediscover(id, entry);
 				break;
 			case 3: {
-				const compat = entry.compat ? JSON.stringify(entry.compat, null, 2) : "{}";
+				const compat = entry.compat ? JSON.stringify(entry.compat) : "{}";
 				this.page = { kind: "compat", id, step: 0, text: compat };
 				this.renderDialog();
 				break;

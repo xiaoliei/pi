@@ -41,9 +41,12 @@ export class Input implements Component, Focusable {
 	}
 
 	setValue(value: string): void {
-		if (value === this.value) return;
-		this.value = value;
-		this.cursor = value.length;
+		// Single-line input: strip newlines the same way handlePaste does so
+		// multi-line prefills (e.g. pretty-printed JSON) cannot corrupt row math.
+		const sanitized = value.replace(/\r\n/g, "").replace(/[\r\n]/g, "");
+		if (sanitized === this.value) return;
+		this.value = sanitized;
+		this.cursor = sanitized.length;
 	}
 
 	handleInput(data: string): void {
