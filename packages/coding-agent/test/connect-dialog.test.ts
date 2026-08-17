@@ -1,7 +1,7 @@
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { setKeybindings, type TUI } from "@earendil-works/pi-tui";
+import { setKeybindings, type TUI } from "@xiaoliyo/pi-tui";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { writeEndpointEntry } from "../src/core/endpoint-config.ts";
 import { KeybindingsManager } from "../src/core/keybindings.ts";

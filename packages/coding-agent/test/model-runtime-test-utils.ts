@@ -1,4 +1,4 @@
-import { type Api, type CredentialStore, fauxProvider, type Model } from "@earendil-works/pi-ai";
+import { type Api, type CredentialStore, fauxProvider, type Model } from "@xiaoliyo/pi-ai";
 import { AuthStorage } from "../src/core/auth-storage.ts";
 import { ModelRegistry } from "../src/core/model-registry.ts";
 import { ModelRuntime } from "../src/core/model-runtime.ts";

@@ -5,9 +5,9 @@
  * a summary of the branch being left so context isn't lost.
  */
 
-import type { AgentMessage, StreamFn } from "@earendil-works/pi-agent-core";
-import type { Model, RetryCallbacks, RetryPolicy, SimpleStreamOptions, Usage } from "@earendil-works/pi-ai";
-import { contentText } from "@earendil-works/pi-ai";
+import type { AgentMessage, StreamFn } from "@xiaoliyo/pi-agent-core";
+import type { Model, RetryCallbacks, RetryPolicy, SimpleStreamOptions, Usage } from "@xiaoliyo/pi-ai";
+import { contentText } from "@xiaoliyo/pi-ai";
 import {
 	convertToLlm,
 	createBranchSummaryMessage,

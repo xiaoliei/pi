@@ -9,7 +9,7 @@ const repoRoot = resolve(scriptDir, "..");
 const codingAgentDir = join(repoRoot, "packages/coding-agent");
 const rootLockfilePath = join(repoRoot, "package-lock.json");
 const shrinkwrapPath = join(codingAgentDir, "npm-shrinkwrap.json");
-const internalPackagePrefix = "@earendil-works/pi-";
+const internalPackagePrefix = "@xiaoliyo/pi-";
 const allowedInstallScriptPackages = new Map([]);
 
 const args = new Set(process.argv.slice(2));

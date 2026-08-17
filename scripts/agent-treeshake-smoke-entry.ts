@@ -1,5 +1,5 @@
-import { Agent } from "@earendil-works/pi-agent-core";
-import { createModels, endpointProvider } from "@earendil-works/pi-ai";
+import { Agent } from "@xiaoliyo/pi-agent-core";
+import { createModels, endpointProvider } from "@xiaoliyo/pi-ai";
 
 const models = createModels();
 models.setProvider(

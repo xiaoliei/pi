@@ -7,9 +7,9 @@ import {
 	type Result,
 	Session,
 	type ShellExecOptions,
-} from "@earendil-works/pi-agent-core";
-import { NodeExecutionEnv } from "@earendil-works/pi-agent-core/node";
-import { createModels } from "@earendil-works/pi-ai";
+} from "@xiaoliyo/pi-agent-core";
+import { NodeExecutionEnv } from "@xiaoliyo/pi-agent-core/node";
+import { createModels } from "@xiaoliyo/pi-ai";
 import { Type } from "typebox";
 import { describe, expect, test, vi } from "vitest";
 import {

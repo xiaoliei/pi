@@ -13,11 +13,11 @@ export const workspaceSourcePaths = {
 export default defineConfig({
 	resolve: {
 		alias: [
-			{ find: /^@earendil-works\/pi-telemetry$/, replacement: workspaceSourcePaths.telemetryIndex },
-			{ find: /^@earendil-works\/pi-telemetry\/testing$/, replacement: workspaceSourcePaths.telemetryTesting },
-			{ find: /^@earendil-works\/pi-ai$/, replacement: workspaceSourcePaths.aiIndex },
-			{ find: /^@earendil-works\/pi-agent-core$/, replacement: workspaceSourcePaths.agentIndex },
-			{ find: /^@earendil-works\/pi-tui$/, replacement: workspaceSourcePaths.tuiIndex },
+			{ find: /^@xiaoliyo\/pi-telemetry$/, replacement: workspaceSourcePaths.telemetryIndex },
+			{ find: /^@xiaoliyo\/pi-telemetry\/testing$/, replacement: workspaceSourcePaths.telemetryTesting },
+			{ find: /^@xiaoliyo\/pi-ai$/, replacement: workspaceSourcePaths.aiIndex },
+			{ find: /^@xiaoliyo\/pi-agent-core$/, replacement: workspaceSourcePaths.agentIndex },
+			{ find: /^@xiaoliyo\/pi-tui$/, replacement: workspaceSourcePaths.tuiIndex },
 		],
 	},
 });

@@ -7,8 +7,8 @@ import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import type { AgentMessage } from "@earendil-works/pi-agent-core";
-import type { AssistantMessage, ImageContent, Message, Model } from "@earendil-works/pi-ai";
+import type { AgentMessage } from "@xiaoliyo/pi-agent-core";
+import type { AssistantMessage, ImageContent, Message, Model } from "@xiaoliyo/pi-ai";
 import type {
 	AutocompleteItem,
 	AutocompleteProvider,
@@ -21,8 +21,8 @@ import type {
 	SlashCommand,
 	Terminal,
 	TuiMainScreenRenderState,
-} from "@earendil-works/pi-tui";
-import * as TuiLayouts from "@earendil-works/pi-tui";
+} from "@xiaoliyo/pi-tui";
+import * as TuiLayouts from "@xiaoliyo/pi-tui";
 import {
 	CombinedAutocompleteProvider,
 	type Component,
@@ -41,7 +41,7 @@ import {
 	TuiAltScreen,
 	TuiMainScreen,
 	visibleWidth,
-} from "@earendil-works/pi-tui";
+} from "@xiaoliyo/pi-tui";
 import chalk from "chalk";
 import { spawn, spawnSync } from "child_process";
 import {

@@ -22,7 +22,7 @@ it("records session and source artifacts against the explicit test task", async 
 
 	expect(task.artifacts).toContainEqual(
 		expect.objectContaining({
-			type: "@earendil-works/pi-evals:session",
+			type: "@xiaoliyo/pi-evals:session",
 			runId,
 			attachments: [
 				expect.objectContaining({
@@ -36,7 +36,7 @@ it("records session and source artifacts against the explicit test task", async 
 	);
 	expect(task.artifacts).toContainEqual(
 		expect.objectContaining({
-			type: "@earendil-works/pi-evals:source",
+			type: "@xiaoliyo/pi-evals:source",
 			runId,
 			attachments: [
 				expect.objectContaining({
@@ -56,7 +56,7 @@ it("persists and selects attachments belonging to the reported run", async () =>
 		const references = await persistEvalArtifactReferences(
 			[
 				{
-					type: "@earendil-works/pi-evals:session",
+					type: "@xiaoliyo/pi-evals:session",
 					runId: "run-1",
 					attachments: [
 						{
@@ -68,12 +68,12 @@ it("persists and selects attachments belonging to the reported run", async () =>
 					],
 				},
 				{
-					type: "@earendil-works/pi-evals:session",
+					type: "@xiaoliyo/pi-evals:session",
 					runId: "run-2",
 					attachments: [],
 				},
 				{
-					type: "@earendil-works/pi-evals:source",
+					type: "@xiaoliyo/pi-evals:source",
 					runId: "run-1",
 					attachments: [
 						{
@@ -89,9 +89,13 @@ it("persists and selects attachments belonging to the reported run", async () =>
 			"run-1",
 			root,
 		);
+		const sep = process.platform === "win32" ? "\\\\" : "/";
 		expect(references).toEqual([
-			{ name: "session.jsonl", path: expect.stringMatching(/^sessions\/[a-f0-9]{64}\/session\.jsonl$/) },
-			{ name: "hello.ts", path: expect.stringMatching(/^sources\/[a-f0-9]{64}\/hello\.ts$/) },
+			{
+				name: "session.jsonl",
+				path: expect.stringMatching(new RegExp(`^sessions${sep}[a-f0-9]{64}${sep}session\\.jsonl$`)),
+			},
+			{ name: "hello.ts", path: expect.stringMatching(new RegExp(`^sources${sep}[a-f0-9]{64}${sep}hello\\.ts$`)) },
 		]);
 		for (const { name, path } of references) {
 			const expected = name === "session.jsonl" ? '{"type":"session"}\n' : "export default function () {}\n";

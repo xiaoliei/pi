@@ -8,7 +8,7 @@
  *   npx tsx test.ts claude-sonnet-4-5-20250929 --thinking
  */
 
-import { type Api, type Context, type Model, registerApiProvider, streamSimple } from "@earendil-works/pi-ai";
+import { type Api, type Context, type Model, registerApiProvider, streamSimple } from "@xiaoliyo/pi-ai";
 import { MODELS, streamGitLabDuo } from "./index.ts";
 
 const MODEL_MAP = new Map(MODELS.map((m) => [m.id, m]));

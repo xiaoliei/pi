@@ -1,10 +1,4 @@
-import {
-	type Api,
-	type AssistantMessage,
-	type AssistantMessageEvent,
-	EventStream,
-	type Model,
-} from "@earendil-works/pi-ai";
+import { type Api, type AssistantMessage, type AssistantMessageEvent, EventStream, type Model } from "@xiaoliyo/pi-ai";
 import { Type } from "typebox";
 import { describe, expect, it } from "vitest";
 import {

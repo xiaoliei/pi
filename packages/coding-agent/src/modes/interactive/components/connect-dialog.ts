@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import { type DiscoveredEndpointModel, discoverEndpointModels } from "@earendil-works/pi-ai";
+import { type DiscoveredEndpointModel, discoverEndpointModels } from "@xiaoliyo/pi-ai";
 import {
 	Container,
 	type Focusable,
@@ -9,7 +9,7 @@ import {
 	Text,
 	TruncatedText,
 	type TUI,
-} from "@earendil-works/pi-tui";
+} from "@xiaoliyo/pi-tui";
 import { getAgentDir } from "../../../config.ts";
 import {
 	deleteEndpointEntry,

@@ -1,4 +1,4 @@
-import { type Api, createModels, type Model, type Usage } from "@earendil-works/pi-ai";
+import { type Api, createModels, type Model, type Usage } from "@xiaoliyo/pi-ai";
 import { describe, expect, it } from "vitest";
 import {
 	AgentHarness,

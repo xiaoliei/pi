@@ -3,6 +3,7 @@
 Pi runs with all permissions by default, but in some cases, you will want to have more control over what directories Pi can write to and which accesses it has.
 
 There are two general options. You can either
+
 1. run the whole `pi` process inside an isolated environment, or
 2. run `pi` on the host and route tool execution into an isolated environment.
 
@@ -54,7 +55,7 @@ FROM node:24-bookworm-slim
 RUN apt-get update \
   && apt-get install -y --no-install-recommends bash ca-certificates git ripgrep \
   && rm -rf /var/lib/apt/lists/*
-RUN npm install -g --ignore-scripts @earendil-works/pi-coding-agent
+RUN npm install -g --ignore-scripts @xiaoliyo/pi-coding-agent
 
 WORKDIR /workspace
 ENTRYPOINT ["pi"]

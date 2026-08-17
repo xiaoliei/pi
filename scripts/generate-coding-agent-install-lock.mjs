@@ -11,8 +11,8 @@ const outputDir = join(codingAgentDir, "install-lock");
 const rootLockfilePath = join(repoRoot, "package-lock.json");
 const outputPackageJsonPath = join(outputDir, "package.json");
 const outputLockfilePath = join(outputDir, "package-lock.json");
-const internalPackagePrefix = "@earendil-works/pi-";
-const installPackageName = "@earendil-works/pi-coding-agent-install";
+const internalPackagePrefix = "@xiaoliyo/pi-";
+const installPackageName = "@xiaoliyo/pi-coding-agent-install";
 const allowedInstallScriptPackages = new Map([]);
 
 const args = new Set(process.argv.slice(2));

@@ -36,8 +36,8 @@ import {
 	type Tool,
 	type ToolCall,
 	type ToolResultMessage,
-} from "@earendil-works/pi-ai";
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+} from "@xiaoliyo/pi-ai";
+import type { ExtensionAPI } from "@xiaoliyo/pi-coding-agent";
 
 // =============================================================================
 // =============================================================================

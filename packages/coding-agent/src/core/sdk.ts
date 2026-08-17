@@ -1,6 +1,6 @@
 import { join } from "node:path";
-import { Agent, type AgentMessage, setDefaultStreamFn, type ThinkingLevel } from "@earendil-works/pi-agent-core";
-import { clampThinkingLevel, type Message, type Model, streamSimple } from "@earendil-works/pi-ai";
+import { Agent, type AgentMessage, setDefaultStreamFn, type ThinkingLevel } from "@xiaoliyo/pi-agent-core";
+import { clampThinkingLevel, type Message, type Model, streamSimple } from "@xiaoliyo/pi-ai";
 import { getAgentDir } from "../config.ts";
 import { resolvePath } from "../utils/paths.ts";
 import { AgentSession } from "./agent-session.ts";
@@ -142,7 +142,7 @@ function getDefaultAgentDir(): string {
  * const { session } = await createAgentSession();
  *
  * // With explicit model
- * import { getModel } from '@earendil-works/pi-ai';
+ * import { getModel } from '@xiaoliyo/pi-ai';
  * const { session } = await createAgentSession({
  *   model: endpointProvider({ id: 'my-endpoint', name: 'My Endpoint', baseUrl: 'https://…', api: 'openai-completions', models: […] }).getModels()[0],
  *   thinkingLevel: 'high',

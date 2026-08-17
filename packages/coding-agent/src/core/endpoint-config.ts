@@ -5,7 +5,7 @@
 
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
-import { type DiscoveredEndpointModel, knownModelMetadata } from "@earendil-works/pi-ai";
+import { type DiscoveredEndpointModel, knownModelMetadata } from "@xiaoliyo/pi-ai";
 import { applyEdits, modify } from "jsonc-parser";
 import {
 	ModelConfig,

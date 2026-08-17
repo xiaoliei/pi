@@ -6,14 +6,14 @@ import { createModelRegistry, getModelRuntime, registerTestFaux } from "./model-
 import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Agent } from "@earendil-works/pi-agent-core";
+import { Agent } from "@xiaoliyo/pi-agent-core";
 import {
 	type AssistantMessage,
 	type AssistantMessageEvent,
 	EventStream,
 	type ImageContent,
 	type TextContent,
-} from "@earendil-works/pi-ai";
+} from "@xiaoliyo/pi-ai";
 import { Type } from "typebox";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AgentSession } from "../src/core/agent-session.ts";

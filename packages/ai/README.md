@@ -1,4 +1,4 @@
-# @earendil-works/pi-ai
+# @xiaoliyo/pi-ai
 
 Unified LLM API for the pi coding agent: protocol implementations, token/cost
 tracking, and a runtime `Models` collection. There is no built-in provider
@@ -9,7 +9,7 @@ stored in `<agentDir>/models.json`.
 ## Installation
 
 ```sh
-npm install @earendil-works/pi-ai
+npm install @xiaoliyo/pi-ai
 ```
 
 ## Quick Start
@@ -17,7 +17,7 @@ npm install @earendil-works/pi-ai
 Build a provider from a configured endpoint:
 
 ```ts
-import { createModels, endpointProvider } from "@earendil-works/pi-ai";
+import { createModels, endpointProvider } from "@xiaoliyo/pi-ai";
 
 const models = createModels();
 models.setProvider(
@@ -69,7 +69,7 @@ per model through `compat`.
 Endpoints that expose `GET {baseUrl}/models` can be probed:
 
 ```ts
-import { discoverEndpointModels } from "@earendil-works/pi-ai";
+import { discoverEndpointModels } from "@xiaoliyo/pi-ai";
 
 const models = await discoverEndpointModels({
 	api: "openai-completions",

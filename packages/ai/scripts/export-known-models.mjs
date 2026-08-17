@@ -11,7 +11,7 @@
 //
 // Usage:
 //   # offline: from the upstream npm tarball
-//   npm pack @earendil-works/pi-ai@<version>
+//   npm pack @xiaoliyo/pi-ai@<version>
 //   tar -xzf pi-ai-<version>.tgz
 //   node packages/ai/scripts/export-known-models.mjs \
 //     --data <path>/package/dist/providers/data \
@@ -245,7 +245,7 @@ async function main() {
 		options.sourceLabel ??
 		(options.input.kind === "models-dev"
 			? `models.dev api.json (${new Date().toISOString().slice(0, 10)})`
-			: "upstream @earendil-works/pi-ai dist/providers/data");
+			: "upstream @xiaoliyo/pi-ai dist/providers/data");
 
 	// normalized model name -> list of distinct metadata variants
 	const byName = new Map();

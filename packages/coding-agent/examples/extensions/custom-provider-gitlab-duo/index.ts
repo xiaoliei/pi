@@ -19,8 +19,8 @@ import {
 	openAIResponsesApi,
 	type SimpleStreamOptions,
 	type ThinkingLevelMap,
-} from "@earendil-works/pi-ai";
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+} from "@xiaoliyo/pi-ai";
+import type { ExtensionAPI } from "@xiaoliyo/pi-coding-agent";
 
 // =============================================================================
 // Constants
