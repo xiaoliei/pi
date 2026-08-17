@@ -1,11 +1,11 @@
 # Development
 
-See [AGENTS.md](https://github.com/xiaoliei/pi-mono/blob/main/AGENTS.md) for additional guidelines.
+See [AGENTS.md](https://github.com/earendil-works/pi-mono/blob/main/AGENTS.md) for additional guidelines.
 
 ## Setup
 
 ```bash
-git clone https://github.com/xiaoliei/pi-mono
+git clone https://github.com/earendil-works/pi-mono
 cd pi-mono
 npm install
 npm run build
