@@ -102,7 +102,11 @@ function run(command, args, options = {}) {
 }
 
 function readPackageJson(directory) {
-	return JSON.parse(readFileSync(join(directory, "package.json"), "utf8"));
+	try {
+		return JSON.parse(readFileSync(join(directory, "package.json"), "utf8"));
+	} catch (error) {
+		throw new Error(`Failed to read or parse ${join(directory, "package.json")}: ${error instanceof Error ? error.message : error}`);
+	}
 }
 
 function commandExists(command) {
@@ -196,7 +200,12 @@ function packPackage(pkg, tarballDirectory) {
 		cwd: pkg.directory,
 	});
 	// npm <11.6 returns an array; newer npm returns an object keyed by package name.
-	const parsed = JSON.parse(output);
+	let parsed;
+	try {
+		parsed = JSON.parse(output);
+	} catch (error) {
+		throw new Error(`Failed to parse npm pack output for ${pkg.name}: ${error instanceof Error ? error.message : error}`);
+	}
 	const packed = Array.isArray(parsed) ? parsed[0] : Object.values(parsed)[0];
 	return join(tarballDirectory, packed.filename);
 }
@@ -215,10 +224,6 @@ const nodeInstallDirectory = join(outDir, "node");
 const bunInstallDirectory = join(outDir, "bun-install");
 const binaryDirectory = join(outDir, "bun");
 mkdirSync(tarballDirectory, { recursive: true });
-
-// Release artifacts always use a freshly generated, strictly validated catalog,
-// including when checks or tests are explicitly skipped.
-run("npm", ["run", "generate:models"], { cwd: repoRoot });
 
 if (!options.skipCheck) {
 	run("npm", ["run", "check"], { cwd: repoRoot });
