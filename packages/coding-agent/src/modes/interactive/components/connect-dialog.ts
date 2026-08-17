@@ -301,9 +301,9 @@ export class ConnectDialogComponent extends Container implements Focusable {
 		} else if (page.step === 1) {
 			this.renderInputStep("Name", form.name);
 		} else if (page.step === 2) {
-			this.renderSelectable("Reasoning:", ["Yes", "No"], form.reasoning ? 0 : 1);
+			this.renderSelectable("Reasoning:", ["Yes", "No"], this.selectedIndex);
 		} else if (page.step === 3) {
-			this.renderSelectable("Enabled:", ["Yes", "No"], form.enabled ? 0 : 1);
+			this.renderSelectable("Enabled:", ["Yes", "No"], this.selectedIndex);
 		} else if (page.step === 4) {
 			this.renderInputStep("Context window (tokens)", form.contextWindow);
 		} else if (page.step === 5) {
