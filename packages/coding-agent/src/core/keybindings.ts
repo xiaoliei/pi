@@ -46,6 +46,7 @@ export interface AppKeybindings {
 	"app.models.toggleProvider": true;
 	"app.models.reorderUp": true;
 	"app.models.reorderDown": true;
+	"app.connect.toggleModel": true;
 	"app.tree.filter.default": true;
 	"app.tree.filter.noTools": true;
 	"app.tree.filter.userOnly": true;
@@ -175,6 +176,10 @@ export const KEYBINDINGS = {
 	"app.models.reorderDown": {
 		defaultKeys: "alt+down",
 		description: "Move model down in order",
+	},
+	"app.connect.toggleModel": {
+		defaultKeys: "space",
+		description: "Toggle model enabled in /connect",
 	},
 	"app.tree.filter.default": {
 		defaultKeys: "ctrl+d",

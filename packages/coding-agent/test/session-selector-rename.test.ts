@@ -100,12 +100,13 @@ describe("session selector rename", () => {
 		expect(output).toContain("Rename Session");
 		expect(output).not.toContain("Resume Session");
 
-		// Type and submit
+		// Type and submit. The prefill "Old" is loaded with the cursor at its end,
+		// so typing appends rather than prepends.
 		selector.handleInput("X");
 		selector.handleInput("\r");
 		await flushPromises();
 
 		expect(renameSession).toHaveBeenCalledTimes(1);
-		expect(renameSession).toHaveBeenCalledWith(sessions[0]!.path, "XOld");
+		expect(renameSession).toHaveBeenCalledWith(sessions[0]!.path, "OldX");
 	});
 });

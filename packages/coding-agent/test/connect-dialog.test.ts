@@ -13,6 +13,9 @@ import { stripAnsi } from "../src/utils/ansi.ts";
 const UP = "\x1b[A";
 const DOWN = "\x1b[B";
 const ENTER = "\r";
+const SPACE = " ";
+const BACKSPACE = "\x7f";
+const ESCAPE = "\x1b";
 
 function createFakeTui(): TUI {
 	return { requestRender: () => {} } as unknown as TUI;
@@ -146,6 +149,146 @@ describe("ConnectDialogComponent", () => {
 		expect(selectedRow(dialog)).toContain("Back");
 		keypress(dialog, UP);
 		expect(selectedRow(dialog)).toContain("Add model");
+	});
+
+	it("space toggles a model enabled and writes models.json", async () => {
+		const dialog = await createDialog();
+		keypress(dialog, ENTER); // manage alpha
+		keypress(dialog, DOWN);
+		keypress(dialog, ENTER); // models page, arrow on m1
+		keypress(dialog, SPACE);
+		await vi.waitFor(() => {
+			const stored = JSON.parse(readFileSync(modelsPath, "utf-8")) as {
+				providers: { alpha?: { models?: Array<{ id: string; enabled?: boolean }> } };
+			};
+			expect(stored.providers["alpha"]?.models?.[0]?.enabled).toBe(false);
+		});
+		await vi.waitFor(() => {
+			expect(renderedText(dialog)).toContain("[ ] m1");
+		});
+		// Enter on a model row must not toggle anymore: it opens the edit menu.
+		keypress(dialog, ENTER);
+		expect(renderedText(dialog)).toContain("Edit model");
+	});
+
+	it("enter opens the per-field edit menu with current values", async () => {
+		const dialog = await createDialog();
+		keypress(dialog, ENTER); // manage alpha
+		keypress(dialog, DOWN);
+		keypress(dialog, ENTER); // models page
+		keypress(dialog, ENTER); // edit menu for m1
+		const text = renderedText(dialog);
+		expect(text).toContain("Edit model");
+		expect(text).toContain("m1");
+		expect(text).toContain("Context window:");
+		expect(text).toContain("8192");
+		expect(text).toContain("Back");
+	});
+
+	it("edits a text field (contextWindow) and persists it", async () => {
+		const dialog = await createDialog();
+		keypress(dialog, ENTER); // manage alpha
+		keypress(dialog, DOWN);
+		keypress(dialog, ENTER); // models page
+		keypress(dialog, ENTER); // edit menu
+		// select Context window (index 5 of MODEL_EDIT_FIELDS)
+		for (let i = 0; i < 5; i++) keypress(dialog, DOWN);
+		keypress(dialog, ENTER);
+		expect(renderedText(dialog)).toContain("Context window (tokens)");
+		// clear the prefilled "8192" and type 4096
+		for (let i = 0; i < 4; i++) keypress(dialog, BACKSPACE);
+		for (const ch of "4096") keypress(dialog, ch);
+		keypress(dialog, ENTER);
+		await vi.waitFor(() => {
+			const stored = JSON.parse(readFileSync(modelsPath, "utf-8")) as {
+				providers: { alpha?: { models?: Array<{ id: string; contextWindow?: number }> } };
+			};
+			expect(stored.providers["alpha"]?.models?.[0]?.contextWindow).toBe(4096);
+		});
+		// back on the edit menu with the new value shown
+		await vi.waitFor(() => {
+			expect(renderedText(dialog)).toContain("4096");
+			expect(renderedText(dialog)).toContain("Edit model");
+		});
+	});
+
+	it("rejects an invalid context window and keeps the field page", async () => {
+		const dialog = await createDialog();
+		keypress(dialog, ENTER); // manage alpha
+		keypress(dialog, DOWN);
+		keypress(dialog, ENTER); // models page
+		keypress(dialog, ENTER); // edit menu
+		for (let i = 0; i < 5; i++) keypress(dialog, DOWN);
+		keypress(dialog, ENTER); // contextWindow field
+		for (let i = 0; i < 4; i++) keypress(dialog, BACKSPACE);
+		keypress(dialog, "0");
+		keypress(dialog, ENTER);
+		await vi.waitFor(() => {
+			const stored = JSON.parse(readFileSync(modelsPath, "utf-8")) as {
+				providers: { alpha?: { models?: Array<{ contextWindow?: number }> } };
+			};
+			expect(stored.providers["alpha"]?.models?.[0]?.contextWindow).toBe(8192);
+		});
+		expect(renderedText(dialog)).toContain("Context window");
+	});
+
+	it("toggles the reasoning choice field and persists it", async () => {
+		const dialog = await createDialog();
+		keypress(dialog, ENTER); // manage alpha
+		keypress(dialog, DOWN);
+		keypress(dialog, ENTER); // models page
+		keypress(dialog, ENTER); // edit menu
+		// Reasoning is field index 2
+		keypress(dialog, DOWN);
+		keypress(dialog, DOWN);
+		keypress(dialog, ENTER);
+		// syncSelection points the arrow at the current value ("No", index 1)
+		expect(selectedRow(dialog)?.trim()).toBe("→ No");
+		keypress(dialog, UP); // "Yes"
+		keypress(dialog, ENTER);
+		await vi.waitFor(() => {
+			const stored = JSON.parse(readFileSync(modelsPath, "utf-8")) as {
+				providers: { alpha?: { models?: Array<{ reasoning?: boolean }> } };
+			};
+			expect(stored.providers["alpha"]?.models?.[0]?.reasoning).toBe(true);
+		});
+		await vi.waitFor(() => {
+			expect(renderedText(dialog)).toContain("Edit model");
+			expect(renderedText(dialog)).toContain("Reasoning:");
+			expect(renderedText(dialog)).toContain("yes");
+		});
+	});
+
+	it("esc from the field page returns to the edit menu", async () => {
+		const dialog = await createDialog();
+		keypress(dialog, ENTER); // manage alpha
+		keypress(dialog, DOWN);
+		keypress(dialog, ENTER); // models page
+		keypress(dialog, ENTER); // edit menu
+		keypress(dialog, ENTER); // id field (index 0)
+		expect(renderedText(dialog)).toContain("Model id");
+		keypress(dialog, ESCAPE);
+		expect(renderedText(dialog)).toContain("Edit model");
+		// arrow restored to the field we came from
+		expect(selectedRow(dialog)).toContain("Id:");
+	});
+
+	it("changing the model id rewrites the entry", async () => {
+		const dialog = await createDialog();
+		keypress(dialog, ENTER); // manage alpha
+		keypress(dialog, DOWN);
+		keypress(dialog, ENTER); // models page
+		keypress(dialog, ENTER); // edit menu
+		keypress(dialog, ENTER); // id field
+		for (let i = 0; i < 2; i++) keypress(dialog, BACKSPACE); // "m1" -> ""
+		for (const ch of "m9") keypress(dialog, ch);
+		keypress(dialog, ENTER);
+		await vi.waitFor(() => {
+			const stored = JSON.parse(readFileSync(modelsPath, "utf-8")) as {
+				providers: { alpha?: { models?: Array<{ id: string }> } };
+			};
+			expect(stored.providers["alpha"]?.models?.[0]?.id).toBe("m9");
+		});
 	});
 
 	it("arrow follows movement on the confirm-delete page entered via Esc", async () => {

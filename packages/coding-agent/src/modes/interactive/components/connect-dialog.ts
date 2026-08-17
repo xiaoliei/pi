@@ -46,6 +46,8 @@ type Page =
 	| { kind: "add"; step: number; form: AddForm; busy?: string; error?: string; discovered?: DiscoveredEndpointModel[] }
 	| { kind: "models"; id: string }
 	| { kind: "model-form"; id: string; index: number; step: number; form: ModelForm }
+	| { kind: "model-edit"; id: string; index: number }
+	| { kind: "model-field"; id: string; index: number; field: ModelEditField }
 	| { kind: "compat"; id: string; step: number; text: string; error?: string }
 	| { kind: "confirm-delete"; id: string };
 
@@ -64,8 +66,76 @@ interface ModelForm {
 	name: string;
 	reasoning: boolean;
 	enabled: boolean;
+	input: "text" | "text+image";
 	contextWindow: string;
 	maxTokens: string;
+}
+
+const MODEL_INPUT_CHOICES = ["Text only", "Text + image"] as const;
+
+type ModelEditField = "id" | "name" | "reasoning" | "enabled" | "input" | "contextWindow" | "maxTokens";
+
+const MODEL_EDIT_FIELDS: readonly ModelEditField[] = [
+	"id",
+	"name",
+	"reasoning",
+	"enabled",
+	"input",
+	"contextWindow",
+	"maxTokens",
+];
+
+function modelFieldLabel(field: ModelEditField): string {
+	switch (field) {
+		case "id":
+			return "Id";
+		case "name":
+			return "Name";
+		case "reasoning":
+			return "Reasoning";
+		case "enabled":
+			return "Enabled";
+		case "input":
+			return "Input";
+		case "contextWindow":
+			return "Context window";
+		case "maxTokens":
+			return "Max tokens";
+	}
+}
+
+function modelFieldValue(model: ModelsJsonModel, field: ModelEditField): string {
+	switch (field) {
+		case "id":
+			return model.id;
+		case "name":
+			return model.name ?? "";
+		case "reasoning":
+			return model.reasoning ? "yes" : "no";
+		case "enabled":
+			return model.enabled !== false ? "yes" : "no";
+		case "input":
+			return model.input?.includes("image") ? "text + image" : "text";
+		case "contextWindow":
+			return String(model.contextWindow ?? "");
+		case "maxTokens":
+			return String(model.maxTokens ?? "");
+	}
+}
+
+function isChoiceModelField(field: ModelEditField): field is "reasoning" | "enabled" | "input" {
+	return field === "reasoning" || field === "enabled" || field === "input";
+}
+
+function modelChoiceIndex(model: ModelsJsonModel | undefined, field: "reasoning" | "enabled" | "input"): number {
+	if (!model) return 0;
+	if (field === "input") return model.input?.includes("image") ? 1 : 0;
+	if (field === "reasoning") return model.reasoning ? 0 : 1;
+	return model.enabled !== false ? 0 : 1;
+}
+
+function inputFromForm(form: ModelForm): ("text" | "image")[] {
+	return form.input === "text+image" ? ["text", "image"] : ["text"];
 }
 
 function entryApi(entry: ModelsJsonProvider): EndpointApi {
@@ -177,6 +247,10 @@ export class ConnectDialogComponent extends Container implements Focusable {
 			this.renderModels(page.id);
 		} else if (page.kind === "model-form") {
 			this.renderModelForm(page);
+		} else if (page.kind === "model-edit") {
+			this.renderModelEdit(page);
+		} else if (page.kind === "model-field") {
+			this.renderModelField(page);
 		} else if (page.kind === "compat") {
 			this.renderCompat(page);
 		} else if (page.kind === "confirm-delete") {
@@ -291,13 +365,17 @@ export class ConnectDialogComponent extends Container implements Focusable {
 			return `[${enabled}] ${model.id} (${meta})`;
 		});
 		const lines = [...modelLines, "＋ Add model", "Back"];
-		this.renderSelectable(`Models for ${id} (Enter toggles enabled, 'e' edits):`, lines, this.selectedIndex);
+		this.renderSelectable(
+			`Models for ${id} (${keyHint("app.connect.toggleModel", "toggles enabled")}, ${keyHint("tui.select.confirm", "edit")}):`,
+			lines,
+			this.selectedIndex,
+		);
 	}
 
 	private renderModelForm(page: Extract<Page, { kind: "model-form" }>): void {
 		const form = page.form;
 		if (page.step === 0) {
-			this.renderInputStep(`Model id${page.index >= 0 ? " (editing)" : ""}`, form.id);
+			this.renderInputStep("Model id", form.id);
 		} else if (page.step === 1) {
 			this.renderInputStep("Name", form.name);
 		} else if (page.step === 2) {
@@ -305,10 +383,47 @@ export class ConnectDialogComponent extends Container implements Focusable {
 		} else if (page.step === 3) {
 			this.renderSelectable("Enabled:", ["Yes", "No"], this.selectedIndex);
 		} else if (page.step === 4) {
-			this.renderInputStep("Context window (tokens)", form.contextWindow);
+			this.renderSelectable("Input:", [...MODEL_INPUT_CHOICES], this.selectedIndex);
 		} else if (page.step === 5) {
+			this.renderInputStep("Context window (tokens)", form.contextWindow);
+		} else if (page.step === 6) {
 			this.renderInputStep("Max tokens", form.maxTokens);
 		}
+	}
+
+	private renderModelEdit(page: Extract<Page, { kind: "model-edit" }>): void {
+		const model = this.currentEntry(page.id)?.models?.[page.index];
+		if (!model) {
+			this.page = { kind: "models", id: page.id };
+			this.renderDialog();
+			return;
+		}
+		const rows = MODEL_EDIT_FIELDS.map(
+			(field) => `${`${modelFieldLabel(field)}:`.padEnd(16)} ${modelFieldValue(model, field)}`,
+		);
+		this.renderSelectable(`Edit model "${model.id}":`, [...rows, "Back"], this.selectedIndex);
+	}
+
+	private renderModelField(page: Extract<Page, { kind: "model-field" }>): void {
+		const model = this.currentEntry(page.id)?.models?.[page.index];
+		if (!model) {
+			this.page = { kind: "models", id: page.id };
+			this.renderDialog();
+			return;
+		}
+		const field = page.field;
+		if (isChoiceModelField(field)) {
+			const choices = field === "input" ? [...MODEL_INPUT_CHOICES] : ["Yes", "No"];
+			this.renderSelectable(`${modelFieldLabel(field)}:`, choices, this.selectedIndex);
+			return;
+		}
+		const titles: Record<Exclude<ModelEditField, "reasoning" | "enabled" | "input">, string> = {
+			id: "Model id",
+			name: "Name (empty to clear)",
+			contextWindow: "Context window (tokens)",
+			maxTokens: "Max tokens",
+		};
+		this.renderInputStep(titles[field], modelFieldValue(model, field));
 	}
 
 	private renderCompat(page: Extract<Page, { kind: "compat" }>): void {
@@ -368,6 +483,8 @@ export class ConnectDialogComponent extends Container implements Focusable {
 			await this.advanceEditStep(value);
 		} else if (page.kind === "model-form") {
 			await this.advanceModelFormStep(value);
+		} else if (page.kind === "model-field") {
+			await this.submitModelField(value);
 		} else if (page.kind === "compat") {
 			await this.saveCompat(value);
 		}
@@ -473,13 +590,15 @@ export class ConnectDialogComponent extends Container implements Focusable {
 				case 1:
 					form.name = value;
 					break;
-				case 4: {
+				case 4:
+					break; // Input is chosen via the select step, not typed.
+				case 5: {
 					const parsed = Number(value);
 					if (!Number.isFinite(parsed) || parsed <= 0) throw new Error("Context window must be a positive number");
 					form.contextWindow = value;
 					break;
 				}
-				case 5: {
+				case 6: {
 					const parsed = Number(value);
 					if (!Number.isFinite(parsed) || parsed <= 0) throw new Error("Max tokens must be a positive number");
 					form.maxTokens = value;
@@ -491,7 +610,7 @@ export class ConnectDialogComponent extends Container implements Focusable {
 			return;
 		}
 		const nextStep = page.step + 1;
-		if (nextStep === 6) {
+		if (nextStep === 7) {
 			await this.saveModelForm(form);
 			return;
 		}
@@ -512,15 +631,15 @@ export class ConnectDialogComponent extends Container implements Focusable {
 			reasoning: form.reasoning,
 			contextWindow: Number(form.contextWindow),
 			maxTokens: Number(form.maxTokens),
-			input: ["text"],
+			input: inputFromForm(form),
 		};
 		if (page.index >= 0) models[page.index] = definition;
 		else models.push(definition);
 		try {
 			await updateEndpointModels(this.modelsPath, page.id, models);
 			await this.refreshAndNotify();
+			// syncSelection() owns page-entry selection (resets to the first row on page change)
 			this.page = { kind: "models", id: page.id };
-			this.selectedIndex = Math.min(Math.max(page.index, 0), models.length - 1);
 			this.renderDialog();
 		} catch (error) {
 			this.showStatusError(error instanceof Error ? error.message : String(error));
@@ -572,7 +691,8 @@ export class ConnectDialogComponent extends Container implements Focusable {
 			(page.kind === "add" && page.step < 4) ||
 			(page.kind === "add" && page.step === 5) ||
 			(page.kind === "edit" && page.step < 4) ||
-			(page.kind === "model-form" && (page.step === 0 || page.step === 1 || page.step === 4 || page.step === 5)) ||
+			(page.kind === "model-form" && (page.step === 0 || page.step === 1 || page.step === 5 || page.step === 6)) ||
+			(page.kind === "model-field" && !isChoiceModelField(page.field)) ||
 			page.kind === "compat";
 		if (usesInput) {
 			this.input.handleInput(keyData);
@@ -589,8 +709,8 @@ export class ConnectDialogComponent extends Container implements Focusable {
 			void this.confirm();
 		} else if (kb.matches(keyData, "tui.select.cancel")) {
 			this.stepBack();
-		} else if (page.kind === "models" && (keyData === "e" || keyData === "E")) {
-			this.editSelectedModel();
+		} else if (page.kind === "models" && kb.matches(keyData, "app.connect.toggleModel")) {
+			void this.toggleSelectedModel();
 		}
 	}
 
@@ -607,6 +727,8 @@ export class ConnectDialogComponent extends Container implements Focusable {
 		if (page.kind === "edit") return `edit:${page.id}:${page.step}`;
 		if (page.kind === "models") return `models:${page.id}`;
 		if (page.kind === "model-form") return `model-form:${page.id}:${page.index}:${page.step}`;
+		if (page.kind === "model-edit") return `model-edit:${page.id}:${page.index}`;
+		if (page.kind === "model-field") return `model-field:${page.id}:${page.index}:${page.field}`;
 		if (page.kind === "compat") return `compat:${page.id}`;
 		return `confirm-delete:${page.id}`;
 	}
@@ -627,6 +749,11 @@ export class ConnectDialogComponent extends Container implements Focusable {
 				this.selectedIndex = page.form.reasoning ? 0 : 1;
 			} else if (page.kind === "model-form" && page.step === 3) {
 				this.selectedIndex = page.form.enabled ? 0 : 1;
+			} else if (page.kind === "model-form" && page.step === 4) {
+				this.selectedIndex = page.form.input === "text+image" ? 1 : 0;
+			} else if (page.kind === "model-field" && isChoiceModelField(page.field)) {
+				const model = this.currentEntry(page.id)?.models?.[page.index];
+				this.selectedIndex = modelChoiceIndex(model, page.field);
 			} else {
 				this.selectedIndex = 0;
 			}
@@ -643,7 +770,9 @@ export class ConnectDialogComponent extends Container implements Focusable {
 		if (page.kind === "add" && page.step === 6) return 2;
 		if (page.kind === "edit" && page.step === 4) return ENDPOINT_APIS.length;
 		if (page.kind === "models") return (this.currentEntry(page.id)?.models?.length ?? 0) + 2;
-		if (page.kind === "model-form" && (page.step === 2 || page.step === 3)) return 2;
+		if (page.kind === "model-form" && (page.step === 2 || page.step === 3 || page.step === 4)) return 2;
+		if (page.kind === "model-edit") return MODEL_EDIT_FIELDS.length + 1;
+		if (page.kind === "model-field" && isChoiceModelField(page.field)) return 2;
 		if (page.kind === "confirm-delete") return 2;
 		return 0;
 	}
@@ -657,7 +786,6 @@ export class ConnectDialogComponent extends Container implements Focusable {
 			} else {
 				this.page = { kind: "add", step: 0, form: emptyForm() };
 			}
-			this.selectedIndex = 0;
 			this.renderDialog();
 		} else if (page.kind === "manage") {
 			await this.confirmManage(page);
@@ -674,10 +802,19 @@ export class ConnectDialogComponent extends Container implements Focusable {
 			await this.saveEdit(ENDPOINT_APIS[this.selectedIndex]!);
 		} else if (page.kind === "models") {
 			await this.confirmModels(page);
-		} else if (page.kind === "model-form" && (page.step === 2 || page.step === 3)) {
+		} else if (page.kind === "model-edit") {
+			this.confirmModelEdit(page);
+		} else if (page.kind === "model-field" && isChoiceModelField(page.field)) {
+			const patch: Partial<ModelsJsonModel> = {};
+			if (page.field === "input") patch.input = this.selectedIndex === 1 ? ["text", "image"] : ["text"];
+			else if (page.field === "reasoning") patch.reasoning = this.selectedIndex === 0;
+			else patch.enabled = this.selectedIndex === 0;
+			await this.applyModelFieldPatch(page, patch);
+		} else if (page.kind === "model-form" && (page.step === 2 || page.step === 3 || page.step === 4)) {
 			const form = { ...page.form };
 			if (page.step === 2) form.reasoning = this.selectedIndex === 0;
-			else form.enabled = this.selectedIndex === 0;
+			else if (page.step === 3) form.enabled = this.selectedIndex === 0;
+			else form.input = this.selectedIndex === 1 ? "text+image" : "text";
 			this.page = { ...page, form, step: page.step + 1 };
 			this.renderDialog();
 		} else if (page.kind === "confirm-delete") {
@@ -686,7 +823,6 @@ export class ConnectDialogComponent extends Container implements Focusable {
 					await deleteEndpointEntry(this.modelsPath, page.id);
 					await this.refreshAndNotify();
 					this.page = { kind: "list" };
-					this.selectedIndex = 0;
 					this.renderDialog();
 				} catch (error) {
 					this.showStatusError(error instanceof Error ? error.message : String(error));
@@ -708,7 +844,6 @@ export class ConnectDialogComponent extends Container implements Focusable {
 				this.renderDialog();
 				break;
 			case 1:
-				this.selectedIndex = 0;
 				this.page = { kind: "models", id };
 				this.renderDialog();
 				break;
@@ -722,7 +857,6 @@ export class ConnectDialogComponent extends Container implements Focusable {
 				break;
 			}
 			case 4:
-				this.selectedIndex = 0;
 				this.page = { kind: "confirm-delete", id };
 				this.renderDialog();
 				break;
@@ -734,22 +868,16 @@ export class ConnectDialogComponent extends Container implements Focusable {
 		if (!entry) return;
 		const models = entry.models ?? [];
 		if (this.selectedIndex < models.length) {
-			const definition = { ...models[this.selectedIndex]! };
-			definition.enabled = definition.enabled === false;
-			const next = models.map((model, index) => (index === this.selectedIndex ? definition : model));
-			try {
-				await updateEndpointModels(this.modelsPath, page.id, next);
-				await this.refreshAndNotify();
-				this.renderDialog();
-			} catch (error) {
-				this.showStatusError(error instanceof Error ? error.message : String(error));
-			}
+			this.page = { kind: "model-edit", id: page.id, index: this.selectedIndex };
+			this.selectedIndex = 0;
+			this.renderDialog();
 		} else if (this.selectedIndex === models.length) {
 			const form: ModelForm = {
 				id: "",
 				name: "",
 				reasoning: false,
 				enabled: true,
+				input: "text",
 				contextWindow: "128000",
 				maxTokens: "16384",
 			};
@@ -761,22 +889,114 @@ export class ConnectDialogComponent extends Container implements Focusable {
 		}
 	}
 
-	private editSelectedModel(): void {
+	/** Enter on a model row opens the per-field edit menu; the last row goes back. */
+	private confirmModelEdit(page: Extract<Page, { kind: "model-edit" }>): void {
+		if (this.selectedIndex < MODEL_EDIT_FIELDS.length) {
+			this.page = {
+				kind: "model-field",
+				id: page.id,
+				index: page.index,
+				field: MODEL_EDIT_FIELDS[this.selectedIndex]!,
+			};
+			this.selectedIndex = 0;
+			this.renderDialog();
+			return;
+		}
+		this.page = { kind: "models", id: page.id };
+		this.selectedIndex = page.index;
+		this.lastPageKey = this.pageKey(this.page);
+		this.renderDialog();
+	}
+
+	private async toggleSelectedModel(): Promise<void> {
 		const page = this.page;
 		if (page.kind !== "models") return;
 		const entry = this.currentEntry(page.id);
 		const models = entry?.models ?? [];
 		if (this.selectedIndex >= models.length) return;
-		const model = models[this.selectedIndex]!;
-		const form: ModelForm = {
-			id: model.id,
-			name: model.name ?? model.id,
-			reasoning: model.reasoning ?? false,
-			enabled: model.enabled !== false,
-			contextWindow: String(model.contextWindow ?? 128000),
-			maxTokens: String(model.maxTokens ?? 16384),
-		};
-		this.page = { kind: "model-form", id: page.id, index: this.selectedIndex, step: 0, form };
+		const next = models.map((model, index) =>
+			index === this.selectedIndex ? { ...model, enabled: model.enabled === false } : model,
+		);
+		try {
+			await updateEndpointModels(this.modelsPath, page.id, next);
+			await this.refreshAndNotify();
+			this.renderDialog();
+		} catch (error) {
+			this.showStatusError(error instanceof Error ? error.message : String(error));
+		}
+	}
+
+	/** Validate a text field edit, write it, and return to the field menu. */
+	private async submitModelField(value: string): Promise<void> {
+		const page = this.page;
+		if (page.kind !== "model-field") return;
+		const models = this.currentEntry(page.id)?.models ?? [];
+		const model = models[page.index];
+		if (!model) return;
+		let patch: Partial<ModelsJsonModel>;
+		try {
+			switch (page.field) {
+				case "id": {
+					const id = value.trim();
+					if (!id) throw new Error("Model id is required");
+					if (models.some((entry, index) => index !== page.index && entry.id === id)) {
+						throw new Error(`Model "${id}" already exists on this endpoint`);
+					}
+					patch = { id };
+					break;
+				}
+				case "name":
+					patch = { name: value.trim() || undefined };
+					break;
+				case "contextWindow": {
+					const parsed = Number(value);
+					if (!Number.isInteger(parsed) || parsed <= 0) {
+						throw new Error("Context window must be a positive integer");
+					}
+					patch = { contextWindow: parsed };
+					break;
+				}
+				case "maxTokens": {
+					const parsed = Number(value);
+					if (!Number.isInteger(parsed) || parsed <= 0) {
+						throw new Error("Max tokens must be a positive integer");
+					}
+					patch = { maxTokens: parsed };
+					break;
+				}
+				default:
+					return;
+			}
+		} catch (error) {
+			this.showStatusError(error instanceof Error ? error.message : String(error));
+			return;
+		}
+		await this.applyModelFieldPatch(page, patch);
+	}
+
+	private async applyModelFieldPatch(
+		page: Extract<Page, { kind: "model-field" }>,
+		patch: Partial<ModelsJsonModel>,
+	): Promise<void> {
+		const entry = this.currentEntry(page.id);
+		const models = [...(entry?.models ?? [])];
+		if (page.index < 0 || page.index >= models.length) return;
+		const next = { ...models[page.index]! } as Record<string, unknown>;
+		for (const [key, value] of Object.entries(patch)) {
+			if (value === undefined) delete next[key];
+			else next[key] = value;
+		}
+		models[page.index] = next as ModelsJsonModel;
+		try {
+			await updateEndpointModels(this.modelsPath, page.id, models);
+			await this.refreshAndNotify();
+		} catch (error) {
+			this.showStatusError(error instanceof Error ? error.message : String(error));
+			return;
+		}
+		this.page = { kind: "model-edit", id: page.id, index: page.index };
+		this.selectedIndex = MODEL_EDIT_FIELDS.indexOf(page.field);
+		this.lastPageKey = this.pageKey(this.page);
 		this.renderDialog();
 	}
 
@@ -883,7 +1103,6 @@ export class ConnectDialogComponent extends Container implements Focusable {
 			);
 			await this.refreshAndNotify();
 			this.page = { kind: "list" };
-			this.selectedIndex = 0;
 			this.renderDialog();
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
@@ -907,7 +1126,6 @@ export class ConnectDialogComponent extends Container implements Focusable {
 		if (page.kind === "add") {
 			if (page.step === 0) {
 				this.page = { kind: "list" };
-				this.selectedIndex = 0;
 			} else {
 				const step = page.step - 1;
 				const form = { ...page.form };
@@ -928,7 +1146,6 @@ export class ConnectDialogComponent extends Container implements Focusable {
 		}
 		if (page.kind === "manage") {
 			this.page = { kind: "list" };
-			this.selectedIndex = 0;
 			this.renderDialog();
 			return;
 		}
@@ -944,6 +1161,20 @@ export class ConnectDialogComponent extends Container implements Focusable {
 			} else {
 				this.page = { ...page, step: page.step - 1 };
 			}
+			this.renderDialog();
+			return;
+		}
+		if (page.kind === "model-edit") {
+			this.page = { kind: "models", id: page.id };
+			this.selectedIndex = page.index;
+			this.lastPageKey = this.pageKey(this.page);
+			this.renderDialog();
+			return;
+		}
+		if (page.kind === "model-field") {
+			this.page = { kind: "model-edit", id: page.id, index: page.index };
+			this.selectedIndex = MODEL_EDIT_FIELDS.indexOf(page.field);
+			this.lastPageKey = this.pageKey(this.page);
 			this.renderDialog();
 			return;
 		}
