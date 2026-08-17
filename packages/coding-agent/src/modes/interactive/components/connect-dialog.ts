@@ -73,7 +73,7 @@ interface ModelForm {
 
 const MODEL_INPUT_CHOICES = ["Text only", "Text + image"] as const;
 
-type ModelEditField = "id" | "name" | "reasoning" | "enabled" | "input" | "contextWindow" | "maxTokens";
+type ModelEditField = "id" | "name" | "reasoning" | "enabled" | "input" | "contextWindow" | "maxTokens" | "compat";
 
 const MODEL_EDIT_FIELDS: readonly ModelEditField[] = [
 	"id",
@@ -83,6 +83,7 @@ const MODEL_EDIT_FIELDS: readonly ModelEditField[] = [
 	"input",
 	"contextWindow",
 	"maxTokens",
+	"compat",
 ];
 
 function modelFieldLabel(field: ModelEditField): string {
@@ -101,6 +102,8 @@ function modelFieldLabel(field: ModelEditField): string {
 			return "Context window";
 		case "maxTokens":
 			return "Max tokens";
+		case "compat":
+			return "Compat (JSON)";
 	}
 }
 
@@ -120,11 +123,17 @@ function modelFieldValue(model: ModelsJsonModel, field: ModelEditField): string 
 			return String(model.contextWindow ?? "");
 		case "maxTokens":
 			return String(model.maxTokens ?? "");
+		case "compat":
+			return model.compat ? JSON.stringify(model.compat) : "{}";
 	}
 }
 
 function isChoiceModelField(field: ModelEditField): field is "reasoning" | "enabled" | "input" {
 	return field === "reasoning" || field === "enabled" || field === "input";
+}
+
+function isJsonModelField(field: ModelEditField): field is "compat" {
+	return field === "compat";
 }
 
 function modelChoiceIndex(model: ModelsJsonModel | undefined, field: "reasoning" | "enabled" | "input"): number {
@@ -417,7 +426,15 @@ export class ConnectDialogComponent extends Container implements Focusable {
 			this.renderSelectable(`${modelFieldLabel(field)}:`, choices, this.selectedIndex);
 			return;
 		}
-		const titles: Record<Exclude<ModelEditField, "reasoning" | "enabled" | "input">, string> = {
+		if (isJsonModelField(field)) {
+			this.contentContainer.addChild(
+				new Text(theme.fg("text", "Model compat overrides as JSON ({} to clear, Enter to save):"), 1, 0),
+			);
+			this.contentContainer.addChild(new Spacer(1));
+			this.prepareInput(modelFieldValue(model, field));
+			return;
+		}
+		const titles: Record<Exclude<ModelEditField, "reasoning" | "enabled" | "input" | "compat">, string> = {
 			id: "Model id",
 			name: "Name (empty to clear)",
 			contextWindow: "Context window (tokens)",
@@ -962,6 +979,20 @@ export class ConnectDialogComponent extends Container implements Focusable {
 						throw new Error("Max tokens must be a positive integer");
 					}
 					patch = { maxTokens: parsed };
+					break;
+				}
+				case "compat": {
+					let parsed: unknown;
+					try {
+						parsed = JSON.parse(value);
+					} catch (error) {
+						throw new Error(`Invalid JSON: ${error instanceof Error ? error.message : String(error)}`);
+					}
+					if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+						throw new Error("Compat must be a JSON object");
+					}
+					const entries = Object.entries(parsed as Record<string, unknown>);
+					patch = { compat: entries.length > 0 ? (parsed as ModelsJsonModel["compat"]) : undefined };
 					break;
 				}
 				default:

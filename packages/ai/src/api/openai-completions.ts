@@ -156,7 +156,7 @@ interface OpenAICompatCacheControl {
 	ttl?: string;
 }
 
-type ResolvedOpenAICompletionsCompat = Omit<
+export type ResolvedOpenAICompletionsCompat = Omit<
 	Required<OpenAICompletionsCompat>,
 	"cacheControlFormat" | "deferredToolsMode" | "supportsThinkingTokenBudget"
 > & {
@@ -1437,6 +1437,49 @@ function mapStopReason(reason: ChatCompletionChunk.Choice["finish_reason"] | str
 }
 
 /**
+ * Model-family detection for unknown endpoints. When the endpoint URL/provider
+ * matches nothing in detectCompat, the model id still tells us which family the
+ * upstream serves. Only conservative inferences belong here: relays translate
+ * request dialects, so family-specific thinking encodings (thinkingFormat) must
+ * NOT be inferred from the model name — only flags that are safe across
+ * dialects, like rejecting the OpenAI-only `developer` role for non-OpenAI
+ * families.
+ */
+function detectModelFamilyCompat(model: Model<"openai-completions">): Partial<ResolvedOpenAICompletionsCompat> {
+	const id = model.id.toLowerCase();
+	// OpenAI reasoning models accept (and for o-series require) the developer role.
+	if (id.startsWith("openai/") || /^(gpt-5|gpt-4\.1|o[134]|o1|o3)/u.test(id) || id.includes("codex")) {
+		return {};
+	}
+	// Anthropic models on relays: system role, anthropic-style params handled by the relay.
+	if (id.startsWith("anthropic/") || /^(claude|anthropic)/u.test(id)) return { supportsDeveloperRole: false };
+	// Non-OpenAI families never accept the developer role on unknown endpoints.
+	if (
+		/^(glm|deepseek|qwen|kimi|moonshot|kimi-k2|glm-)/u.test(id) ||
+		id.startsWith("zai/") ||
+		id.startsWith("deepseek/") ||
+		id.startsWith("qwen/") ||
+		id.startsWith("moonshot") ||
+		id.startsWith("minimax") ||
+		id.startsWith("xai/") ||
+		id.startsWith("grok") ||
+		id.startsWith("mistral") ||
+		id.startsWith("meta-") ||
+		id.startsWith("llama") ||
+		id.startsWith("gemini") ||
+		id.startsWith("google/") ||
+		id.startsWith("doubao") ||
+		id.startsWith("ernie") ||
+		id.startsWith("hunyuan") ||
+		id.startsWith("seed") ||
+		id.startsWith("step-")
+	) {
+		return { supportsDeveloperRole: false };
+	}
+	return {};
+}
+
+/**
  * Auto-detect compatibility settings from provider name and baseUrl.
  * Used as the base when model.compat is not set; explicit model.compat
  * entries override these detected values.
@@ -1492,9 +1535,16 @@ function detectCompat(model: Model<"openai-completions">): ResolvedOpenAIComplet
 		isOpenRouter && (model.id.startsWith("anthropic/") || model.id.startsWith("openai/"));
 	const cacheControlFormat = provider === "openrouter" && model.id.startsWith("anthropic/") ? "anthropic" : undefined;
 
+	// Endpoint matched a known service: its flags win, no model-name layer.
+	// Unknown endpoint: keep the OpenAI baseline but let the model family apply
+	// conservative inferences (e.g. developer role for non-OpenAI families).
+	const familyCompat = isNonStandard || isOpenRouter ? undefined : detectModelFamilyCompat(model);
+
 	return {
 		supportsStore: !isNonStandard,
-		supportsDeveloperRole: isOpenRouterDeveloperRoleModel || (!isNonStandard && !isOpenRouter),
+		supportsDeveloperRole:
+			isOpenRouterDeveloperRoleModel ||
+			(!isNonStandard && !isOpenRouter && (familyCompat?.supportsDeveloperRole ?? true)),
 		supportsReasoningEffort:
 			!isGrok && !isZai && !isMoonshot && !isTogether && !isCloudflareAiGateway && !isNvidia && !isAntLing,
 		supportsUsageInStreaming: true,
@@ -1541,7 +1591,7 @@ function detectCompat(model: Model<"openai-completions">): ResolvedOpenAIComplet
  * Get resolved compatibility settings for a model.
  * Auto-detects from provider/URL then overrides with explicit model.compat.
  */
-function getCompat(model: Model<"openai-completions">): ResolvedOpenAICompletionsCompat {
+export function getCompat(model: Model<"openai-completions">): ResolvedOpenAICompletionsCompat {
 	const detected = detectCompat(model);
 	if (!model.compat) return detected;
 

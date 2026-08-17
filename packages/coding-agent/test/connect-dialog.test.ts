@@ -291,6 +291,54 @@ describe("ConnectDialogComponent", () => {
 		});
 	});
 
+	it("edits model compat as JSON and persists it", async () => {
+		const dialog = await createDialog();
+		keypress(dialog, ENTER); // manage alpha
+		keypress(dialog, DOWN);
+		keypress(dialog, ENTER); // models page
+		keypress(dialog, ENTER); // edit menu
+		// Compat is the last field (index 7)
+		for (let i = 0; i < 7; i++) keypress(dialog, DOWN);
+		keypress(dialog, ENTER);
+		expect(renderedText(dialog)).toContain("Model compat overrides as JSON");
+		// Replace the prefilled "{}" with a compat override
+		for (let i = 0; i < 2; i++) keypress(dialog, BACKSPACE);
+		for (const ch of '{"supportsDeveloperRole":false}') keypress(dialog, ch);
+		keypress(dialog, ENTER);
+		await vi.waitFor(() => {
+			const stored = JSON.parse(readFileSync(modelsPath, "utf-8")) as {
+				providers: { alpha?: { models?: Array<{ id: string; compat?: unknown }> } };
+			};
+			expect(stored.providers["alpha"]?.models?.[0]?.compat).toEqual({ supportsDeveloperRole: false });
+		});
+		// back on the edit menu showing the persisted value
+		await vi.waitFor(() => {
+			const text = renderedText(dialog);
+			expect(text).toContain("Edit model");
+			expect(text).toContain("supportsDeveloperRole");
+		});
+	});
+
+	it("rejects invalid model compat JSON and keeps the field page", async () => {
+		const dialog = await createDialog();
+		keypress(dialog, ENTER); // manage alpha
+		keypress(dialog, DOWN);
+		keypress(dialog, ENTER); // models page
+		keypress(dialog, ENTER); // edit menu
+		for (let i = 0; i < 7; i++) keypress(dialog, DOWN);
+		keypress(dialog, ENTER);
+		for (let i = 0; i < 2; i++) keypress(dialog, BACKSPACE);
+		for (const ch of "not json") keypress(dialog, ch);
+		keypress(dialog, ENTER);
+		// stays on the field page; nothing written
+		await vi.waitFor(() => {
+			const stored = JSON.parse(readFileSync(modelsPath, "utf-8")) as {
+				providers: { alpha?: { models?: Array<{ compat?: unknown }> } };
+			};
+			expect(stored.providers["alpha"]?.models?.[0]?.compat).toBeUndefined();
+		});
+	});
+
 	it("arrow follows movement on the confirm-delete page entered via Esc", async () => {
 		const dialog = await createDialog();
 		keypress(dialog, ENTER); // manage
