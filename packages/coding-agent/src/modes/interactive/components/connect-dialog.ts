@@ -44,10 +44,10 @@ type Page =
 	| { kind: "manage"; id: string; entry: ModelsJsonProvider }
 	| { kind: "edit"; id: string; entry: ModelsJsonProvider; step: number }
 	| { kind: "add"; step: number; form: AddForm; busy?: string; error?: string; discovered?: DiscoveredEndpointModel[] }
-	| { kind: "models"; id: string; selected: number }
+	| { kind: "models"; id: string }
 	| { kind: "model-form"; id: string; index: number; step: number; form: ModelForm }
 	| { kind: "compat"; id: string; step: number; text: string; error?: string }
-	| { kind: "confirm-delete"; id: string; selected: number };
+	| { kind: "confirm-delete"; id: string };
 
 interface AddForm {
 	id: string;
@@ -98,6 +98,7 @@ export class ConnectDialogComponent extends Container implements Focusable {
 	private readonly input: Input;
 	private page: Page = { kind: "list" };
 	private selectedIndex = 0;
+	private lastPageKey = "";
 	private endpoints: Array<{ id: string; entry: ModelsJsonProvider }> = [];
 	private discoveryController: AbortController | undefined;
 
@@ -121,7 +122,6 @@ export class ConnectDialogComponent extends Container implements Focusable {
 		this.addChild(this.contentContainer);
 
 		this.input = new Input();
-		this.addChild(this.input);
 		this.addChild(new DynamicBorder());
 
 		this.input.onEscape = () => {
@@ -154,12 +154,14 @@ export class ConnectDialogComponent extends Container implements Focusable {
 
 	async open(): Promise<void> {
 		await this.loadEndpoints();
+		this.lastPageKey = "";
 		this.page = { kind: "list" };
 		this.selectedIndex = 0;
 		this.renderDialog();
 	}
 
 	private renderDialog(): void {
+		this.syncSelection();
 		this.contentContainer.clear();
 		const page = this.page;
 		this.contentContainer.addChild(new Spacer(1));
@@ -172,7 +174,7 @@ export class ConnectDialogComponent extends Container implements Focusable {
 		} else if (page.kind === "edit") {
 			this.renderEdit(page);
 		} else if (page.kind === "models") {
-			this.renderModels(page.id, page.selected);
+			this.renderModels(page.id);
 		} else if (page.kind === "model-form") {
 			this.renderModelForm(page);
 		} else if (page.kind === "compat") {
@@ -246,7 +248,7 @@ export class ConnectDialogComponent extends Container implements Focusable {
 			return;
 		}
 		if (step === 4) {
-			this.renderSelectable("Protocol:", ENDPOINT_APIS, ENDPOINT_APIS.indexOf(page.form.api));
+			this.renderSelectable("Protocol:", ENDPOINT_APIS, this.selectedIndex);
 			return;
 		}
 		if (step === 5) {
@@ -254,7 +256,7 @@ export class ConnectDialogComponent extends Container implements Focusable {
 			return;
 		}
 		if (step === 6) {
-			this.renderSelectable("Discover and import models via /models?", ["Yes", "No"], page.form.discover ? 0 : 1);
+			this.renderSelectable("Discover and import models via /models?", ["Yes", "No"], this.selectedIndex);
 		}
 	}
 
@@ -272,11 +274,11 @@ export class ConnectDialogComponent extends Container implements Focusable {
 			return;
 		}
 		if (page.step === 4) {
-			this.renderSelectable("Protocol:", ENDPOINT_APIS, ENDPOINT_APIS.indexOf(entryApi(entry)));
+			this.renderSelectable("Protocol:", ENDPOINT_APIS, this.selectedIndex);
 		}
 	}
 
-	private renderModels(id: string, selected: number): void {
+	private renderModels(id: string): void {
 		const entry = this.endpoints.find((endpoint) => endpoint.id === id)?.entry;
 		if (!entry) {
 			this.page = { kind: "list" };
@@ -289,7 +291,7 @@ export class ConnectDialogComponent extends Container implements Focusable {
 			return `[${enabled}] ${model.id} (${meta})`;
 		});
 		const lines = [...modelLines, "＋ Add model", "Back"];
-		this.renderSelectable(`Models for ${id} (Enter toggles enabled, 'e' edits):`, lines, selected);
+		this.renderSelectable(`Models for ${id} (Enter toggles enabled, 'e' edits):`, lines, this.selectedIndex);
 	}
 
 	private renderModelForm(page: Extract<Page, { kind: "model-form" }>): void {
@@ -325,7 +327,7 @@ export class ConnectDialogComponent extends Container implements Focusable {
 		this.renderSelectable(
 			`Delete endpoint "${page.id}"? This cannot be undone.`,
 			["Delete", "Cancel"],
-			page.selected,
+			this.selectedIndex,
 		);
 	}
 
@@ -517,11 +519,8 @@ export class ConnectDialogComponent extends Container implements Focusable {
 		try {
 			await updateEndpointModels(this.modelsPath, page.id, models);
 			await this.refreshAndNotify();
-			this.page = {
-				kind: "models",
-				id: page.id,
-				selected: Math.min(page.index >= 0 ? page.index : models.length - 1, models.length),
-			};
+			this.page = { kind: "models", id: page.id };
+			this.selectedIndex = Math.min(Math.max(page.index, 0), models.length - 1);
 			this.renderDialog();
 		} catch (error) {
 			this.showStatusError(error instanceof Error ? error.message : String(error));
@@ -584,7 +583,7 @@ export class ConnectDialogComponent extends Container implements Focusable {
 			this.selectedIndex = Math.max(0, this.selectedIndex - 1);
 			this.renderDialog();
 		} else if (kb.matches(keyData, "tui.select.down")) {
-			this.selectedIndex = Math.min(this.listLength(), this.selectedIndex + 1);
+			this.selectedIndex = Math.min(this.listLength() - 1, this.selectedIndex + 1);
 			this.renderDialog();
 		} else if (kb.matches(keyData, "tui.select.confirm")) {
 			void this.confirm();
@@ -595,9 +594,50 @@ export class ConnectDialogComponent extends Container implements Focusable {
 		}
 	}
 
+	/** Page identity — selection resets when it changes. */
+	private pageKey(page: Page): string {
+		if (page.kind === "list") return "list";
+		if (page.kind === "manage") return `manage:${page.id}`;
+		if (page.kind === "add") {
+			let state = "form";
+			if (page.busy) state = "busy";
+			else if (page.discovered) state = "found";
+			return `add:${page.step}:${state}`;
+		}
+		if (page.kind === "edit") return `edit:${page.id}:${page.step}`;
+		if (page.kind === "models") return `models:${page.id}`;
+		if (page.kind === "model-form") return `model-form:${page.id}:${page.index}:${page.step}`;
+		if (page.kind === "compat") return `compat:${page.id}`;
+		return `confirm-delete:${page.id}`;
+	}
+
+	/** On page (re-)entry, point the arrow at the current value and clamp in range. */
+	private syncSelection(): void {
+		const page = this.page;
+		const key = this.pageKey(page);
+		if (key !== this.lastPageKey) {
+			this.lastPageKey = key;
+			if (page.kind === "add" && page.step === 4) {
+				this.selectedIndex = Math.max(0, ENDPOINT_APIS.indexOf(page.form.api));
+			} else if (page.kind === "add" && page.step === 6) {
+				this.selectedIndex = page.form.discover ? 0 : 1;
+			} else if (page.kind === "edit" && page.step === 4) {
+				this.selectedIndex = Math.max(0, ENDPOINT_APIS.indexOf(entryApi(page.entry)));
+			} else if (page.kind === "model-form" && page.step === 2) {
+				this.selectedIndex = page.form.reasoning ? 0 : 1;
+			} else if (page.kind === "model-form" && page.step === 3) {
+				this.selectedIndex = page.form.enabled ? 0 : 1;
+			} else {
+				this.selectedIndex = 0;
+			}
+		}
+		const max = this.listLength() - 1;
+		if (this.selectedIndex > max) this.selectedIndex = Math.max(0, max);
+	}
+
 	private listLength(): number {
 		const page = this.page;
-		if (page.kind === "list") return this.endpoints.length;
+		if (page.kind === "list") return this.endpoints.length + 1;
 		if (page.kind === "manage") return 5;
 		if (page.kind === "add" && page.step === 4) return ENDPOINT_APIS.length;
 		if (page.kind === "add" && page.step === 6) return 2;
@@ -668,7 +708,8 @@ export class ConnectDialogComponent extends Container implements Focusable {
 				this.renderDialog();
 				break;
 			case 1:
-				this.page = { kind: "models", id, selected: 0 };
+				this.selectedIndex = 0;
+				this.page = { kind: "models", id };
 				this.renderDialog();
 				break;
 			case 2:
@@ -681,7 +722,8 @@ export class ConnectDialogComponent extends Container implements Focusable {
 				break;
 			}
 			case 4:
-				this.page = { kind: "confirm-delete", id, selected: 0 };
+				this.selectedIndex = 0;
+				this.page = { kind: "confirm-delete", id };
 				this.renderDialog();
 				break;
 		}
@@ -897,7 +939,8 @@ export class ConnectDialogComponent extends Container implements Focusable {
 		}
 		if (page.kind === "model-form") {
 			if (page.step === 0) {
-				this.page = { kind: "models", id: page.id, selected: 0 };
+				this.selectedIndex = 0;
+				this.page = { kind: "models", id: page.id };
 			} else {
 				this.page = { ...page, step: page.step - 1 };
 			}
