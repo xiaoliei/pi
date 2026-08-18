@@ -1156,7 +1156,7 @@ describe("ModelRegistry", () => {
 				medium: null,
 				xhigh: "max",
 			});
-			expect(getSupportedThinkingLevels(model)).toEqual(["high", "xhigh"]);
+			expect(getSupportedThinkingLevels(model)).toEqual(["high", "xhigh", "max"]);
 			expect(await registry.getApiKeyAndHeaders(model)).toMatchObject({
 				ok: true,
 				headers: { "x-model-override": "enabled" },

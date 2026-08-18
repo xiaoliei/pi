@@ -807,12 +807,9 @@ const EXTENDED_THINKING_LEVELS: ModelThinkingLevel[] = ["off", "minimal", "low",
 export function getSupportedThinkingLevels<TApi extends Api>(model: Model<TApi>): ModelThinkingLevel[] {
 	if (!model.reasoning) return ["off"];
 
-	return EXTENDED_THINKING_LEVELS.filter((level) => {
-		const mapped = model.thinkingLevelMap?.[level];
-		if (mapped === null) return false;
-		if (level === "xhigh" || level === "max") return mapped !== undefined;
-		return true;
-	});
+	// xhigh/max always show for reasoning models; without a compat map entry they
+	// pass through as provider defaults (providers fall back to the raw level).
+	return EXTENDED_THINKING_LEVELS.filter((level) => model.thinkingLevelMap?.[level] !== null);
 }
 
 export function clampThinkingLevel<TApi extends Api>(
